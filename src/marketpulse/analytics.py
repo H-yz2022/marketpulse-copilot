@@ -164,8 +164,11 @@ def ticker_overview(ticker: str, db_path: Optional[str] = None) -> dict:
     filings = [dict(r) for r in db.fetch_filings(t, db_path=db_path)]
     for f in filings:
         f["excerpt_preview"] = (f.pop("excerpt", "") or "")[:400]
+    from marketpulse.seed import data_status
+
     return {
         "ticker": t,
+        "data_status": data_status(t, db_path=db_path),
         "summary": price_summary(prices),
         "sentiment": sentiment_summary(sentiment),
         "prices": [

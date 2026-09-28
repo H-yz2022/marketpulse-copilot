@@ -58,6 +58,12 @@ CREATE TABLE IF NOT EXISTS chunks (
 );
 CREATE INDEX IF NOT EXISTS idx_chunks_ticker ON chunks (ticker);
 
+-- Small key/value store for app state (e.g. where each ticker's data came from).
+CREATE TABLE IF NOT EXISTS app_meta (
+    key TEXT PRIMARY KEY,
+    value TEXT NOT NULL
+);
+
 -- One row per billed LLM call; backs the per-client and global daily caps.
 CREATE TABLE IF NOT EXISTS llm_usage (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -299,3 +305,19 @@ def delete_chunks_for_ticker(ticker: str, db_path: Optional[str] = None) -> int:
     init_db(db_path)
     with connect(db_path) as conn:
         return conn.execute("DELETE FROM chunks WHERE ticker = ?", (ticker.upper(),)).rowcount
+
+
+def set_meta(key: str, value: str, db_path: Optional[str] = None) -> None:
+    init_db(db_path)
+    with connect(db_path) as conn:
+        conn.execute(
+            "INSERT INTO app_meta (key, value) VALUES (?, ?) ON CONFLICT(key) DO UPDATE SET value=excluded.value",
+            (key, value),
+        )
+
+
+def get_meta(key: str, default: Optional[str] = None, db_path: Optional[str] = None) -> Optional[str]:
+    init_db(db_path)
+    with connect(db_path) as conn:
+        row = conn.execute("SELECT value FROM app_meta WHERE key = ?", (key,)).fetchone()
+        return row["value"] if row else default

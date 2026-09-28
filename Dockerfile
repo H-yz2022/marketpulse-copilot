@@ -20,6 +20,7 @@ RUN pip install -r requirements.txt
 COPY pyproject.toml README.md ./
 COPY src/ src/
 COPY scripts/ scripts/
+COPY seed/ seed/
 RUN pip install --no-deps -e .
 COPY --from=web /web/dist frontend/dist
 

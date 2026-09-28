@@ -52,9 +52,9 @@ class Settings:
     # Every endpoint that calls the Anthropic API is checked against both caps
     # *before* the API is called. Per-client is keyed by client IP.
     max_llm_calls_per_client_per_day: int = field(
-        default_factory=lambda: _int("MARKETPULSE_MAX_CLIENT_LLM_CALLS", 15)
+        default_factory=lambda: _int("MARKETPULSE_MAX_CLIENT_LLM_CALLS", 10)
     )
-    max_llm_calls_per_day: int = field(default_factory=lambda: _int("MARKETPULSE_MAX_DAILY_LLM_CALLS", 150))
+    max_llm_calls_per_day: int = field(default_factory=lambda: _int("MARKETPULSE_MAX_DAILY_LLM_CALLS", 30))
     # Max tool-use round trips the analyst agent may take for one question.
     agent_max_steps: int = field(default_factory=lambda: _int("MARKETPULSE_AGENT_MAX_STEPS", 6))
     # Comma-separated origins allowed to call the API from a browser (for a

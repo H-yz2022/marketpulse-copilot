@@ -128,7 +128,11 @@ def hybrid_retrieve(
 
     lists = []
     for q in dict.fromkeys(queries):  # de-dupe, keep order
-        dense = [{**h, "_source": "dense"} for h in dense_fn(q, n_results=n_results * 2, where=where)]
+        try:
+            dense_hits = dense_fn(q, n_results=n_results * 2, where=where)
+        except Exception:  # noqa: BLE001 - vector index still building / unavailable: BM25 carries on alone
+            dense_hits = []
+        dense = [{**h, "_source": "dense"} for h in dense_hits]
         sparse = [{**h, "_source": "bm25"} for h in bm25_search(q, n_results * 2, where, db_path)]
         lists.extend([dense, sparse])
     fused = rrf_fuse(lists)[:n_results]

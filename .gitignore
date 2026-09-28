@@ -13,8 +13,8 @@ env/
 .env
 
 # Data (generated locally; don't commit a scraped SQLite DB or vector index)
-data/*.db
-data/chroma/
+data/
+*.db-journal
 *.sqlite3
 
 # OS/editor

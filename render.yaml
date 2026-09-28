@@ -13,6 +13,8 @@ services:
       - key: MARKETPULSE_TICKERS
         value: AAPL,MSFT,JPM,NVDA,GS
       - key: MARKETPULSE_MAX_CLIENT_LLM_CALLS
-        value: "15"
+        value: "10"
       - key: MARKETPULSE_MAX_DAILY_LLM_CALLS
-        value: "150"
+        value: "30"          # hard daily ceiling on billed AI calls for the public demo
+      - key: ANTHROPIC_MODEL
+        value: claude-sonnet-4-5   # claude-haiku-4-5 is ~3x cheaper

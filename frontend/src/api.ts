@@ -43,8 +43,14 @@ export interface Filing {
   excerpt_preview: string;
 }
 
+export interface DataStatus {
+  source: "snapshot" | "live" | "unknown";
+  as_of: string | null;
+}
+
 export interface Overview {
   ticker: string;
+  data_status?: DataStatus;
   summary: PriceSummary;
   sentiment: SentimentSummary;
   prices: PriceRow[];

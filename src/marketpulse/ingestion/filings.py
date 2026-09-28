@@ -103,34 +103,89 @@ def fetch_document_excerpt(cik: str, accession_no: str, filename: str, max_chars
     body_text = soup.get_text(separator=" ", strip=True)
     body_text = re.sub(r"\s+", " ", body_text)
 
-    # A real 10-K repeats "Item 1A. Risk Factors" at least twice: once in the
-    # table of contents (immediately followed by a page number and "Item
-    # 1B"), and again as the actual section header, with the real prose
-    # after it. Taking the *first* occurrence - as an earlier version of
-    # this function did - grabs only the two-word-and-a-page-number ToC
-    # line. The *last* occurrence is reliably the real section header, so we
-    # anchor there and read forward to the next "Item 1B" (uncapped, since
-    # real risk-factor sections can run tens of thousands of characters).
-    headers = list(_RISK_FACTORS_HEADER_RE.finditer(body_text))
-    if headers:
-        start = headers[-1].end()
-        rest = body_text[start:]
+    section = _pick_risk_section(body_text)
+    return (section or body_text)[:max_chars]
+
+
+_REFERENCE_BEFORE_RE = re.compile(
+    r"(see|in|under|refer to|described in|discussed in|set forth in|part i,?)\W*$", re.IGNORECASE
+)
+
+
+def _pick_risk_section(body_text: str) -> str:
+    """Find the real "Item 1A. Risk Factors" section among its many mentions.
+
+    A 10-K mentions "Item 1A. Risk Factors" several times, and only one of
+    them starts the real section:
+      * the table of contents ("Item 1A. Risk Factors 12 Item 1B ...") - tiny;
+      * cross-references in prose ('see "Item 1A. Risk Factors" for ...');
+      * a trailing cross-reference index some filers add at the end (Microsoft
+        does) - tiny again.
+    Earlier versions took the first mention (grabbed the ToC) and then the
+    last one (grabbed MSFT's index page number and NVDA's MD&A reference).
+    Now every mention is a candidate section running to the next "Item 1B";
+    mentions preceded by reference words ("see", "in", "under" ...) or with
+    no Item 1B after them are discarded, and the longest remaining section wins.
+    """
+    best = ""
+    fallback = ""
+    for m in _RISK_FACTORS_HEADER_RE.finditer(body_text):
+        rest = body_text[m.end():]
         end_match = _ITEM_1B_RE.search(rest)
-        end = end_match.start() if end_match else len(rest)
-        excerpt = rest[:end].strip()
-        if excerpt:
-            return excerpt[:max_chars]
-    return body_text[:max_chars]
+        if not end_match:
+            continue
+        section = rest[: end_match.start()].strip(" .:-\"'”")
+        before = body_text[max(0, m.start() - 30) : m.start()].rstrip(" \"“'(")
+        if _REFERENCE_BEFORE_RE.search(before):
+            fallback = max(fallback, section, key=len)
+            continue
+        best = max(best, section, key=len)
+    return best or fallback
+
+
+_EXHIBIT_TYPE_RE = re.compile(r"^EX-", re.IGNORECASE)
+_EXHIBIT_TEXT_RE = re.compile(r"^\s*EX-\d", re.IGNORECASE)
+
+
+def select_main_documents(hits: list[dict], forms: str = "10-K", limit: int = 3) -> list[dict]:
+    """Keep only the newest `limit` *main* filing documents from EDGAR search hits.
+
+    EDGAR full-text search ignores our `size` parameter and returns up to 100
+    hits, and a single 10-K filing appears many times - once for the main
+    document and once per exhibit (EX-10.24 compensation agreements, EX-21
+    subsidiary lists, ...), all tagged with the filing's form "10-K". Before
+    this filter, one refresh pulled 20+ years of annual reports plus dozens of
+    exhibits per ticker: slow to fetch and noise for retrieval.
+
+    Rules: drop hits whose `file_type` is an exhibit, keep one document per
+    accession number, newest filing date first, then take `limit`.
+    """
+    wanted = {f.strip().upper() for f in forms.split(",") if f.strip()}
+    seen_accessions: set[str] = set()
+    kept = []
+    for hit in sorted(hits, key=lambda h: h.get("_source", {}).get("file_date", ""), reverse=True):
+        source = hit.get("_source", {})
+        file_type = str(source.get("file_type") or "").upper()
+        if file_type and (_EXHIBIT_TYPE_RE.match(file_type) or (wanted and file_type not in wanted)):
+            continue
+        accession = hit.get("_id", "").partition(":")[0] or source.get("adsh", "")
+        if accession in seen_accessions:
+            continue
+        seen_accessions.add(accession)
+        kept.append(hit)
+        if len(kept) >= limit:
+            break
+    return kept
 
 
 def ingest_filings_for_ticker(
     ticker: str,
     query: str = "risk factors",
     forms: str = "10-K",
-    size: int = 5,
+    size: int = 3,
     db_path: Optional[str] = None,
 ) -> int:
-    """Look up a ticker's CIK, search recent filings, fetch real excerpt text, and persist.
+    """Look up a ticker's CIK, find its `size` most recent annual reports, extract Item 1A, and persist.
 
     Defaults to 10-K filings only. A 10-Q's "Item 1A. Risk Factors" section is
     usually just a pointer ("see Part I, Item 1A of the year's Form 10-K")
@@ -140,7 +195,7 @@ def ingest_filings_for_ticker(
     explicitly if you specifically want quarter-over-quarter change language.
     """
     cik = get_cik_for_ticker(ticker)
-    hits = search_filings(query, forms=forms, ciks=cik, size=size)
+    hits = select_main_documents(search_filings(query, forms=forms, ciks=cik, size=size), forms=forms, limit=size)
 
     count = 0
     for hit in hits:
@@ -160,6 +215,8 @@ def ingest_filings_for_ticker(
                 excerpt = fetch_document_excerpt(filer_cik, accession_no, filename, max_chars=30000)
             except Exception:  # noqa: BLE001 - network/parsing hiccups shouldn't kill the whole run
                 excerpt = ""
+        if _EXHIBIT_TEXT_RE.match(excerpt):  # second guard when file_type was missing
+            continue
 
         display_name = source.get("display_names", [""])[0] if source.get("display_names") else ""
         if not excerpt:

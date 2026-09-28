@@ -44,9 +44,24 @@ export default function Dashboard({ tickers, ticker, onMeta }: { tickers: string
           <h1>{ticker}</h1>
           <p>Prices, NLP sentiment on 10-K risk factors, and AI research tools for one company.</p>
         </div>
-        <button className="btn" onClick={() => doRefresh()} disabled={refresh.busy}>
-          {refresh.busy ? <Spinner /> : "↻"} {refresh.busy ? "Fetching SEC + market data…" : "Refresh live data"}
-        </button>
+        <div className="stack" style={{ alignItems: "flex-end", gap: 6 }}>
+          <button className="btn" onClick={() => doRefresh()} disabled={refresh.busy}>
+            {refresh.busy ? <Spinner /> : "↻"} {refresh.busy ? "Fetching SEC + market data (~30s)…" : "Refresh live data"}
+          </button>
+          {ov.data?.data_status && ov.data.data_status.source !== "unknown" && (
+            <span
+              className={`badge ${ov.data.data_status.source === "live" ? "pos" : "outline"}`}
+              title={
+                ov.data.data_status.source === "snapshot"
+                  ? "Built-in snapshot that loads instantly. Click Refresh live data for real-time prices and filings."
+                  : "Fetched live from Yahoo Finance and SEC EDGAR."
+              }
+            >
+              {ov.data.data_status.source === "live" ? "● Live data" : "Snapshot data"}
+              {ov.data.data_status.as_of ? ` · ${fmtDate(ov.data.data_status.as_of.slice(0, 10), true)}` : ""}
+            </span>
+          )}
+        </div>
       </div>
 
       <TickerPicker

@@ -146,3 +146,32 @@ def test_ingest_filings_for_ticker(monkeypatch, tmp_path):
     assert len(rows) == 1
     assert rows[0]["form_type"] == "10-K"
     assert "supply chain" in rows[0]["excerpt"].lower()
+
+def test_select_main_documents_drops_exhibits_duplicates_and_old_years():
+    def hit(acc, fname, date, file_type):
+        return {"_id": f"{acc}:{fname}", "_source": {"file_date": date, "file_type": file_type, "form": "10-K"}}
+
+    hits = [
+        hit("A-2024", "main24.htm", "2024-11-01", "10-K"),
+        hit("A-2026", "ex10.htm", "2026-02-25", "EX-10.24"),
+        hit("A-2026", "main26.htm", "2026-02-25", "10-K"),
+        hit("A-2026", "main26b.htm", "2026-02-25", "10-K"),  # same accession -> dropped
+        hit("A-2025", "main25.htm", "2025-02-27", "10-K"),
+        hit("A-2010", "main10.htm", "2010-10-27", "10-K"),
+    ]
+    kept = filings.select_main_documents(hits, forms="10-K", limit=3)
+    assert [h["_id"] for h in kept] == ["A-2026:main26.htm", "A-2025:main25.htm", "A-2024:main24.htm"]
+
+
+def test_pick_risk_section_ignores_toc_references_and_trailing_index():
+    real = "Our business faces many risks, including supply chain disruption. " * 20
+    body = (
+        "Item 1A. Risk Factors 12 Item 1B. Unresolved Staff Comments 14 "  # table of contents
+        "Business overview. For more, see \"Item 1A. Risk Factors\" for additional information. "
+        "Item 1A. Risk Factors " + real + " Item 1B. Unresolved Staff Comments None. "
+        "MD&A discussed in Item 1A. Risk Factors of this report. "
+        "Cross reference index Item 1A. Risk Factors 18 Item 1B. Unresolved Staff Comments 30"  # MSFT-style index
+    )
+    section = filings._pick_risk_section(body)
+    assert section.startswith("Our business faces many risks")
+    assert "Unresolved" not in section and "Business overview" not in section

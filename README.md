@@ -68,6 +68,10 @@ flowchart LR
 
 Four independent layers: (1) static checks (one statement, SELECT/WITH only, no write/DDL/PRAGMA keywords, with string literals stripped first); (2) a SQLite `mode=ro` connection; (3) an **authorizer callback** that allows only the public tables and denies `sqlite_master`, internal tables and recursive CTEs, even inside sub-queries; (4) a time limit via the progress handler and a row cap.
 
+### Built-in snapshot + live refresh
+
+The repo ships a small **snapshot dataset** (`seed/marketpulse_seed.json.gz`, about a year of daily prices plus the latest three 10-K risk-factor sections per ticker). On first start with an empty database the app restores it in seconds, so a fresh clone or deploy is usable immediately. Keyword (BM25) search works at once, and vector embeddings are built in a background thread. **Refresh live data** on any ticker replaces its snapshot with real-time prices and filings, and a badge on the dashboard shows which source you're looking at. To regenerate the snapshot: `python scripts/export_seed.py`.
+
 ### Cost and abuse controls
 
 Every billed endpoint checks a **per-client and a global daily cap** (persisted in SQLite) *before* calling the Anthropic API. If AI is disabled (no key), the endpoint returns 503 and no quota is consumed.
@@ -96,8 +100,10 @@ python -m venv .venv
 source .venv/bin/activate            # Windows: .venv\Scripts\activate
 pip install -r requirements-dev.txt
 cp .env.example .env                 # Windows: copy .env.example .env   -> then add your keys
-python scripts/run_pipeline.py --ticker AAPL MSFT JPM NVDA GS
 uvicorn marketpulse.api.main:app --reload --app-dir src     # http://localhost:8000/docs
+# First start loads the built-in snapshot in seconds - no data download needed.
+# Optional: pull real-time data from the CLI instead of the "Refresh live data" button:
+#   python scripts/run_pipeline.py --ticker AAPL MSFT JPM NVDA GS
 
 # Frontend (second terminal)
 cd frontend
@@ -107,7 +113,7 @@ npm run dev                          # http://localhost:5173
 
 **One container:** `docker build -t marketpulse-copilot . && docker run -p 8000:8000 --env-file .env marketpulse-copilot` serves the API and the built UI at http://localhost:8000.
 
-**Deploy (free):** push to GitHub, then on [Render](https://render.com) choose **New → Blueprint** and pick this repo (`render.yaml`). Set `ANTHROPIC_API_KEY` and `SEC_USER_AGENT` in the dashboard. On first boot the app ingests the default tickers automatically.
+**Deploy (free):** push to GitHub, then on [Render](https://render.com) choose **New → Blueprint** and pick this repo (`render.yaml`). Set `ANTHROPIC_API_KEY` and `SEC_USER_AGENT` in the dashboard. On first boot the app loads the built-in snapshot, so the site is usable right away.
 
 ## Tests
 
@@ -131,7 +137,8 @@ src/marketpulse/
   nlp/          FinBERT / lexicon sentiment
   analytics.py  returns, volatility, drawdown, correlation, watchlist
 frontend/src/   React + TypeScript UI (dependency-free SVG charts)
-scripts/        run_pipeline.py, eval_retrieval.py, init_db.py, reset_data.py
+scripts/        run_pipeline.py, export_seed.py, load_seed.py, eval_retrieval.py, reset_data.py
+seed/           built-in snapshot dataset loaded on first start
 docs/           ARCHITECTURE.md: design decisions and trade-offs
 ```
 

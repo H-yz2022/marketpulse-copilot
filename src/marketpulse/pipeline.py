@@ -11,7 +11,9 @@ accumulate and dilute retrieval with stale data.
 """
 from __future__ import annotations
 
+import json
 import logging
+from datetime import datetime, timezone
 from typing import Callable, Optional
 
 from marketpulse.db import (
@@ -19,6 +21,7 @@ from marketpulse.db import (
     delete_sentiment_scores_for_ticker,
     fetch_filings,
     init_db,
+    set_meta,
 )
 from marketpulse.ingestion.filings import ingest_filings_for_ticker
 from marketpulse.ingestion.market_data import ingest_price_history
@@ -69,4 +72,6 @@ def refresh_ticker(
             },
         )
         n_indexed += 1
+    now = datetime.now(timezone.utc).isoformat(timespec="seconds")
+    set_meta(f"source:{t}", json.dumps({"source": "live", "as_of": now}), db_path=db_path)
     return {"ticker": t, "prices": n_prices, "filings": n_filings, "indexed": n_indexed, "chunks": n_chunks}

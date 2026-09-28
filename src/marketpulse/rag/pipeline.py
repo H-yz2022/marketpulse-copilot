@@ -55,15 +55,19 @@ def _get_collection():
     return _CLIENT.get_or_create_collection(_COLLECTION_NAME)
 
 
-def index_document(doc_id: str, text: str, metadata: dict) -> int:
-    """Chunk a filing and add it to the vector store. Returns chunk count."""
+def index_document(doc_id: str, text: str, metadata: dict, dense: bool = True) -> int:
+    """Chunk a filing and index it. Returns chunk count.
+
+    Chunks always go to the SQLite mirror (BM25 keyword search works at once).
+    With `dense=True` they are also embedded into Chroma; the snapshot loader
+    passes False and embeds everything later in a background thread, so the
+    app is usable immediately on a cold start.
+    """
     chunks = chunk_text(text)
     if not chunks:
         return 0
-    collection = _get_collection()
     ids = [f"{doc_id}-{i}" for i in range(len(chunks))]
     metadatas = [dict(metadata, chunk_index=i) for i in range(len(chunks))]
-    collection.upsert(ids=ids, documents=chunks, metadatas=metadatas)
     upsert_chunks(
         [
             {
@@ -77,7 +81,25 @@ def index_document(doc_id: str, text: str, metadata: dict) -> int:
             for cid, chunk, meta in zip(ids, chunks, metadatas)
         ]
     )
+    if dense:
+        _get_collection().upsert(ids=ids, documents=chunks, metadatas=metadatas)
     return len(chunks)
+
+
+def embed_stored_chunks(ticker: Optional[str] = None, batch_size: int = 64) -> int:
+    """Embed chunks already in the SQLite mirror into Chroma (idempotent upsert)."""
+    from marketpulse.db import fetch_chunks
+
+    rows = fetch_chunks(ticker=ticker)
+    collection = _get_collection()
+    for start in range(0, len(rows), batch_size):
+        batch = rows[start : start + batch_size]
+        collection.upsert(
+            ids=[r["chunk_id"] for r in batch],
+            documents=[r["text"] for r in batch],
+            metadatas=[json.loads(r["metadata_json"] or "{}") for r in batch],
+        )
+    return len(rows)
 
 
 def delete_ticker_documents(ticker: str) -> None:
