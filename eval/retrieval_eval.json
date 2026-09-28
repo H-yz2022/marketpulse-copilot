@@ -1,0 +1,11 @@
+[
+  {"q": "Which risks relate to manufacturing partners or suppliers?", "ticker": "AAPL", "must_contain": ["supplier", "outsourc", "manufactur"]},
+  {"q": "How could tariffs or trade policy hurt the business?", "ticker": "AAPL", "must_contain": ["tariff", "trade"]},
+  {"q": "What does the company say about cybersecurity incidents?", "ticker": "MSFT", "must_contain": ["cyber", "security breach", "attack"]},
+  {"q": "What are the risks from AI and cloud infrastructure investment?", "ticker": "MSFT", "must_contain": ["artificial intelligence", " ai ", "datacenter", "cloud"]},
+  {"q": "How do capital and liquidity requirements affect the bank?", "ticker": "JPM", "must_contain": ["capital", "liquidity"]},
+  {"q": "What regulatory or supervisory risks are disclosed?", "ticker": "JPM", "must_contain": ["regulat", "supervis"]},
+  {"q": "What export control risks does the company face?", "ticker": "NVDA", "must_contain": ["export"]},
+  {"q": "How does customer concentration create risk?", "ticker": "NVDA", "must_contain": ["customer"]},
+  {"q": "What market or trading risks could reduce revenue?", "ticker": "GS", "must_contain": ["market", "trading"]}
+]

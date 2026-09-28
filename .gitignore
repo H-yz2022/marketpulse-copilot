@@ -1,0 +1,28 @@
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+.eggs/
+.pytest_cache/
+.ruff_cache/
+.venv/
+venv/
+env/
+
+# Environment / secrets
+.env
+
+# Data (generated locally; don't commit a scraped SQLite DB or vector index)
+data/*.db
+data/chroma/
+*.sqlite3
+
+# OS/editor
+.DS_Store
+.idea/
+.vscode/
+
+# Frontend
+frontend/node_modules/
+frontend/dist/
+*.log

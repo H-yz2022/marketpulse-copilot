@@ -1,0 +1,41 @@
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "marketpulse-copilot"
+version = "1.0.0"
+description = "Multi-agent LLM research workspace for market data and SEC filings (FastAPI + React)"
+readme = "README.md"
+requires-python = ">=3.10"
+dependencies = [
+    "fastapi>=0.115",
+    "uvicorn[standard]>=0.30",
+    "pydantic>=2.7",
+    "anthropic>=0.40",
+    "chromadb>=0.5",
+    "requests>=2.31",
+    "yfinance>=0.2.40",
+    "pandas>=2.0",
+    "python-dotenv>=1.0",
+    "beautifulsoup4>=4.12",
+    "lxml>=5.0",
+]
+
+[project.optional-dependencies]
+# Real FinBERT sentiment (heavy: pulls in torch). Without this installed,
+# marketpulse.nlp.sentiment automatically falls back to a lexicon scorer.
+nlp = ["transformers>=4.40", "torch>=2.2"]
+dev = ["pytest>=8.0", "httpx>=0.27", "ruff>=0.4"]
+
+[tool.setuptools.packages.find]
+where = ["src"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+
+[tool.ruff.lint]
+select = ["E", "F", "I"]
+
+[tool.ruff]
+line-length = 120

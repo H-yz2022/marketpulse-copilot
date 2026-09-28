@@ -1,0 +1,16 @@
+# Runtime dependencies. Install with: pip install -r requirements.txt
+fastapi>=0.115
+uvicorn[standard]>=0.30
+pydantic>=2.7
+anthropic>=0.40
+chromadb>=0.5
+requests>=2.31
+yfinance>=0.2.40
+pandas>=2.0
+python-dotenv>=1.0
+beautifulsoup4>=4.12
+lxml>=5.0
+
+# Optional: real FinBERT sentiment instead of the lexicon fallback (heavy: pulls in torch).
+# transformers>=4.40
+# torch>=2.2
