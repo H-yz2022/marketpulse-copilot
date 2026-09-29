@@ -9,13 +9,20 @@ without a real API key.
 from __future__ import annotations
 
 import json
+import logging
+import threading
 from typing import Callable, Optional
 
 from marketpulse.config import settings
 from marketpulse.db import delete_chunks_for_ticker, upsert_chunks
 
+log = logging.getLogger(__name__)
 _CLIENT = None
+_EMBEDDER = None
 _COLLECTION_NAME = "filings"
+_EMBED_BATCH = 8  # documents per ONNX forward pass; bigger batches spike RAM for little speed-up
+_SYNC_LOCK = threading.Lock()
+_SYNCED = False
 
 
 def chunk_text(text: str, chunk_size: int = 800, overlap: int = 100) -> list[str]:
@@ -46,13 +53,77 @@ def chunk_text(text: str, chunk_size: int = 800, overlap: int = 100) -> list[str
     return [c for c in chunks if c]
 
 
+def _embedding_function():
+    """Chroma's default MiniLM model with a small-container ONNX session.
+
+    The stock session sizes its thread pool to the host's cores and keeps a
+    growing memory arena; embedding a few hundred chunks that way peaks around
+    700 MB, which gets a 512 MB container (e.g. Render's free plan) killed.
+    Two threads, no arena and 8-document batches keep the peak near 250 MB.
+    Same model and vectors as the default, so existing indexes stay valid.
+    """
+    global _EMBEDDER
+    if _EMBEDDER is None:
+        import os
+        from functools import cached_property
+
+        from chromadb.utils.embedding_functions import ONNXMiniLM_L6_V2
+
+        class LeanMiniLM(ONNXMiniLM_L6_V2):
+            @cached_property
+            def model(self):
+                so = self.ort.SessionOptions()
+                so.log_severity_level = 3
+                so.intra_op_num_threads = 2
+                so.inter_op_num_threads = 1
+                so.enable_cpu_mem_arena = False
+                so.graph_optimization_level = self.ort.GraphOptimizationLevel.ORT_ENABLE_ALL
+                return self.ort.InferenceSession(
+                    os.path.join(self.DOWNLOAD_PATH, self.EXTRACTED_FOLDER_NAME, "model.onnx"),
+                    providers=["CPUExecutionProvider"],
+                    sess_options=so,
+                )
+
+            def __call__(self, input):
+                self._download_model_if_not_exists()
+                return list(self._forward(list(input), batch_size=_EMBED_BATCH))
+
+        _EMBEDDER = LeanMiniLM()
+    return _EMBEDDER
+
+
+def embed_texts(texts: list[str]) -> list:
+    """Embed texts with the same model Chroma uses for this collection."""
+    return _embedding_function()(texts) if texts else []
+
+
 def _get_collection():
     global _CLIENT
     import chromadb
 
     if _CLIENT is None:
         _CLIENT = chromadb.PersistentClient(path=settings.chroma_persist_dir)
-    return _CLIENT.get_or_create_collection(_COLLECTION_NAME)
+    return _CLIENT.get_or_create_collection(_COLLECTION_NAME, embedding_function=_embedding_function())
+
+
+def _synced_collection():
+    """The collection, after a one-time catch-up with the SQLite chunk mirror.
+
+    Nothing touches Chroma or the embedding model at start-up; the first
+    semantic query pays for it instead. The snapshot ships precomputed vectors,
+    so that catch-up is a plain insert - the model only embeds chunks that have
+    none (and then encodes the query itself).
+    """
+    global _SYNCED
+    collection = _get_collection()
+    if not _SYNCED:
+        with _SYNC_LOCK:
+            if not _SYNCED:
+                n = embed_stored_chunks(collection=collection)
+                if n:
+                    log.info("Vector index caught up: %d chunks added", n)
+                _SYNCED = True
+    return collection
 
 
 def index_document(doc_id: str, text: str, metadata: dict, dense: bool = True) -> int:
@@ -86,20 +157,37 @@ def index_document(doc_id: str, text: str, metadata: dict, dense: bool = True) -
     return len(chunks)
 
 
-def embed_stored_chunks(ticker: Optional[str] = None, batch_size: int = 64) -> int:
-    """Embed chunks already in the SQLite mirror into Chroma (idempotent upsert)."""
+def embed_stored_chunks(ticker: Optional[str] = None, batch_size: int = 64, collection=None) -> int:
+    """Add chunks from the SQLite mirror that Chroma doesn't have yet. Returns how many.
+
+    Uses the snapshot's precomputed vectors where available and only runs the
+    embedding model for the rest.
+    """
     from marketpulse.db import fetch_chunks
+    from marketpulse.seed import load_vectors
 
     rows = fetch_chunks(ticker=ticker)
-    collection = _get_collection()
-    for start in range(0, len(rows), batch_size):
-        batch = rows[start : start + batch_size]
-        collection.upsert(
-            ids=[r["chunk_id"] for r in batch],
-            documents=[r["text"] for r in batch],
-            metadatas=[json.loads(r["metadata_json"] or "{}") for r in batch],
-        )
-    return len(rows)
+    if not rows:
+        return 0
+    collection = collection or _get_collection()
+    have = set(collection.get(ids=[r["chunk_id"] for r in rows], include=[])["ids"])
+    missing = [r for r in rows if r["chunk_id"] not in have]
+    if not missing:
+        return 0
+    vectors = load_vectors()
+    precomputed = [r for r in missing if r["chunk_id"] in vectors]
+    to_embed = [r for r in missing if r["chunk_id"] not in vectors]
+    for rows_, with_vectors in ((precomputed, True), (to_embed, False)):
+        for start in range(0, len(rows_), batch_size):
+            batch = rows_[start : start + batch_size]
+            ids = [r["chunk_id"] for r in batch]
+            collection.upsert(
+                ids=ids,
+                documents=[r["text"] for r in batch],
+                metadatas=[json.loads(r["metadata_json"] or "{}") for r in batch],
+                **({"embeddings": [vectors[i] for i in ids]} if with_vectors else {}),
+            )
+    return len(missing)
 
 
 def delete_ticker_documents(ticker: str) -> None:
@@ -127,8 +215,9 @@ def reset_client() -> None:
     without this, the already-initialized client would keep pointing at
     on-disk files that no longer exist.
     """
-    global _CLIENT
+    global _CLIENT, _SYNCED
     _CLIENT = None
+    _SYNCED = False
 
 
 def retrieve(query: str, n_results: int = 8, where: Optional[dict] = None) -> list[dict]:
@@ -142,7 +231,7 @@ def retrieve(query: str, n_results: int = 8, where: Optional[dict] = None) -> li
     before reaching the specific risks further into the document; asking for
     more chunks gives the LLM a real chance to see past the intro.
     """
-    collection = _get_collection()
+    collection = _synced_collection()
     results = collection.query(query_texts=[query], n_results=n_results, where=where)
     hits = []
     docs = results.get("documents", [[]])[0]

@@ -70,7 +70,7 @@ Four independent layers: (1) static checks (one statement, SELECT/WITH only, no 
 
 ### Built-in snapshot + live refresh
 
-The repo ships a small **snapshot dataset** (`seed/marketpulse_seed.json.gz`, about a year of daily prices plus the latest three 10-K risk-factor sections per ticker). On first start with an empty database the app restores it in seconds, so a fresh clone or deploy is usable immediately. Keyword (BM25) search works at once, and vector embeddings are built in a background thread. **Refresh live data** on any ticker replaces its snapshot with real-time prices and filings, and a badge on the dashboard shows which source you're looking at. To regenerate the snapshot: `python scripts/export_seed.py`.
+The repo ships a small **snapshot dataset** (`seed/marketpulse_seed.json.gz`, about a year of daily prices plus the latest three 10-K risk-factor sections per ticker). On first start with an empty database the app restores it in seconds, so a fresh clone or deploy is usable immediately. Keyword (BM25) search works at once. The snapshot also ships each chunk's embedding, and Chroma plus the embedding model load only on the first semantic query, so an idle server stays around 50 MB and fits a 512 MB free-tier instance. **Refresh live data** on any ticker replaces its snapshot with real-time prices and filings, and a badge on the dashboard shows which source you're looking at. To regenerate the snapshot: `python scripts/export_seed.py`.
 
 ### Cost and abuse controls
 

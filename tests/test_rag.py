@@ -20,10 +20,16 @@ class _FakeCollection:
 
     def __init__(self):
         self.docs = {}
+        self.vectors = {}
 
-    def upsert(self, ids, documents, metadatas):
-        for i, d, m in zip(ids, documents, metadatas):
+    def upsert(self, ids, documents, metadatas, embeddings=None):
+        for n, (i, d, m) in enumerate(zip(ids, documents, metadatas)):
             self.docs[i] = (d, m)
+            if embeddings is not None:
+                self.vectors[i] = embeddings[n]
+
+    def get(self, ids, include=None):
+        return {"ids": [i for i in ids if i in self.docs]}
 
     def query(self, query_texts, n_results, where=None):
         items = list(self.docs.items())[:n_results]
@@ -96,3 +102,23 @@ def test_reset_client_clears_cached_client(monkeypatch):
     monkeypatch.setattr(pipeline, "_CLIENT", object())  # simulate an already-connected client
     pipeline.reset_client()
     assert pipeline._CLIENT is None
+
+
+def test_retrieve_catches_up_vector_index_lazily(monkeypatch):
+    """Chunks indexed with dense=False reach Chroma on the first query, using the
+    snapshot's precomputed vectors where present and the model only for the rest."""
+    from marketpulse import db, seed
+
+    rows = [{"chunk_id": f"doc1-{i}", "text": f"export controls {i}", "metadata_json": '{"ticker": "NVDA"}'}
+            for i in range(3)]
+    monkeypatch.setattr(db, "fetch_chunks", lambda ticker=None: rows)
+    monkeypatch.setattr(seed, "load_vectors", lambda: {"doc1-0": [0.0, 0.0], "doc1-1": [1.0, 1.0]})
+    fake = _FakeCollection()
+    monkeypatch.setattr(pipeline, "_get_collection", lambda: fake)
+    monkeypatch.setattr(pipeline, "_SYNCED", False)
+
+    assert pipeline.retrieve("export controls")
+    assert set(fake.docs) == {"doc1-0", "doc1-1", "doc1-2"}
+    assert fake.vectors == {"doc1-0": [0.0, 0.0], "doc1-1": [1.0, 1.0]}  # doc1-2 left to the model
+    assert pipeline._SYNCED
+    assert pipeline.embed_stored_chunks(collection=fake) == 0  # idempotent

@@ -24,5 +24,4 @@ if __name__ == "__main__":
         sys.exit("Database already has data. Run scripts/reset_data.py first to start from the snapshot.")
     summary = load_snapshot()
     print(f"Loaded {summary['filings']} filings for {', '.join(summary['tickers'])} (snapshot {summary['as_of']})")
-    print("Embedding chunks for semantic search (about a minute)...")
-    print(f"Embedded {embed_stored_chunks()} chunks. Done.")
+    print(f"Indexed {embed_stored_chunks()} chunks for semantic search. Done.")

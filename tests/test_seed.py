@@ -15,12 +15,14 @@ def test_snapshot_roundtrip_keeps_latest_main_filings(tmp_path, monkeypatch):
     ]:
         db.upsert_filing({"filing_id": fid, "ticker": "AAPL", "form_type": "10-K", "filed_date": date,
                           "title": "t", "url": "", "excerpt": text}, db_path=src)
+    import marketpulse.rag.pipeline as rp
+
+    monkeypatch.setattr(rp, "embed_texts", lambda texts: [[0.5, -0.25, float(i)] for i in range(len(texts))])
     path = tmp_path / "snap.json.gz"
     summary = seed.export_snapshot(path, per_ticker=2, db_path=src)
     assert summary["tickers"] == ["AAPL", "MSFT"] and summary["prices"] == 60
 
     dst = str(tmp_path / "dst.db")
-    import marketpulse.rag.pipeline as rp
 
     calls = []
     monkeypatch.setattr(rp, "upsert_chunks", lambda rows: calls.append(len(rows)))
@@ -28,6 +30,10 @@ def test_snapshot_roundtrip_keeps_latest_main_filings(tmp_path, monkeypatch):
     ids = [f["filing_id"] for f in db.fetch_filings("AAPL", db_path=dst)]
     assert ids == ["AAPL-1", "AAPL-0:old.htm"]
     assert loaded["filings"] == 3 and sum(calls) == loaded["chunks"] > 0
+    # One precomputed vector per indexed chunk, keyed by the chunk ids the loader creates.
+    vectors = seed.load_vectors(path)
+    assert summary["vectors"] == len(vectors) == loaded["chunks"]
+    assert vectors["AAPL-1-0"] == [0.5, -0.25, 0.0]
     status = seed.data_status("AAPL", db_path=dst)
     assert status["source"] == "snapshot" and status["as_of"] == json.loads(
         db.get_meta("source:MSFT", db_path=dst))["as_of"]

@@ -48,8 +48,11 @@ def _auto_seed() -> None:
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    """First boot with an empty database: load the built-in snapshot (instant),
-    or - if no snapshot file ships with this build - fetch live data in the background."""
+    """First boot with an empty database: load the built-in snapshot (instant, SQLite only),
+    or - if no snapshot file ships with this build - fetch live data in the background.
+
+    Nothing heavy starts here: Chroma and the embedding model load on the first
+    semantic query, so an idle instance stays at ~50-70 MB."""
     from marketpulse import seed
 
     db.init_db()
@@ -57,7 +60,6 @@ async def lifespan(app: FastAPI):
         if seed.snapshot_available():
             summary = seed.load_snapshot()
             log.info("Loaded snapshot: %s", summary)
-            seed.start_background_embedding()
         elif settings.auto_seed:
             threading.Thread(target=_auto_seed, name="auto-seed", daemon=True).start()
     yield

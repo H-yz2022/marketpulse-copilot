@@ -6,20 +6,21 @@ committed to the repo (seed/marketpulse_seed.json.gz).
 
 `load_snapshot()` runs on first boot when the database is empty. It restores
 the SQL tables and the BM25 chunk mirror in a second or two, so every page,
-the SQL explorer and keyword search work immediately. Vector embeddings are
-built afterwards in a background thread (`start_background_embedding`);
-until they finish, hybrid retrieval simply runs on BM25 alone.
+the SQL explorer and keyword search work immediately. The file also carries
+each chunk's embedding (float16), which the vector index picks up lazily on
+the first semantic query (`load_vectors`) - so start-up never loads the
+embedding model or Chroma, and a small container stays well inside its memory.
 
 Users can still pull real-time data for any ticker with "Refresh live data",
 which replaces that ticker's snapshot rows.
 """
 from __future__ import annotations
 
+import base64
 import gzip
 import json
 import logging
 import re
-import threading
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Optional
@@ -49,7 +50,33 @@ def _latest_main_filings(ticker: str, per_ticker: int, db_path: Optional[str]) -
     return kept
 
 
-def export_snapshot(path: Path = SEED_PATH, per_ticker: int = 3, db_path: Optional[str] = None) -> dict:
+def _chunk_filing(f: dict) -> tuple[list[str], list[str]]:
+    """(chunk ids, chunk texts) exactly as `load_snapshot` will index this filing."""
+    from marketpulse.rag.pipeline import chunk_text
+
+    chunks = chunk_text(f["excerpt"] or f["title"] or "")
+    return [f"{f['filing_id']}-{i}" for i in range(len(chunks))], chunks
+
+
+def encode_vectors(filings: list[dict]) -> dict:
+    """Embed every chunk of these filings -> compact {"ids", "dim", "f16": base64} block."""
+    import numpy as np
+
+    from marketpulse.rag.pipeline import embed_texts
+
+    ids, texts = [], []
+    for f in filings:
+        i, t = _chunk_filing(f)
+        ids += i
+        texts += t
+    vecs = np.asarray(embed_texts(texts), dtype=np.float16)
+    dim = int(vecs.shape[1]) if vecs.size else 0
+    return {"ids": ids, "dim": dim, "f16": base64.b64encode(vecs.tobytes()).decode("ascii")}
+
+
+def export_snapshot(
+    path: Path = SEED_PATH, per_ticker: int = 3, db_path: Optional[str] = None, with_vectors: bool = True
+) -> dict:
     """Write the snapshot file. Returns a summary of what was exported."""
     tickers = db.list_tickers(db_path=db_path)
     prices, filings, sentiment = [], [], []
@@ -73,6 +100,8 @@ def export_snapshot(path: Path = SEED_PATH, per_ticker: int = 3, db_path: Option
         "filings": filings,
         "sentiment_scores": sentiment,
     }
+    if with_vectors:
+        payload["vectors"] = encode_vectors(filings)
     path.parent.mkdir(parents=True, exist_ok=True)
     with gzip.open(path, "wt", encoding="utf-8") as fh:
         json.dump(payload, fh, separators=(",", ":"))
@@ -82,6 +111,7 @@ def export_snapshot(path: Path = SEED_PATH, per_ticker: int = 3, db_path: Option
         "prices": len(prices),
         "filings": len(filings),
         "sentiment": len(sentiment),
+        "vectors": len(payload.get("vectors", {}).get("ids", [])),
         "bytes": path.stat().st_size,
     }
 
@@ -108,7 +138,7 @@ def load_snapshot(path: Path = SEED_PATH, db_path: Optional[str] = None) -> dict
 
     n_chunks = 0
     for f in payload["filings"]:
-        text = f["excerpt"] or f["title"] or ""
+        text = f["excerpt"] or f["title"] or ""  # keep in sync with _chunk_filing
         n_chunks += index_document(
             f["filing_id"],
             text,
@@ -127,21 +157,18 @@ def load_snapshot(path: Path = SEED_PATH, db_path: Optional[str] = None) -> dict
     return {"tickers": payload["tickers"], "filings": len(payload["filings"]), "chunks": n_chunks, "as_of": as_of}
 
 
-def start_background_embedding() -> threading.Thread:
-    """Embed the snapshot's chunks into Chroma without blocking start-up."""
+def load_vectors(path: Path = SEED_PATH) -> dict:
+    """{chunk_id: embedding} from the snapshot file; {} if it has none."""
+    import numpy as np
 
-    def run() -> None:
-        from marketpulse.rag.pipeline import embed_stored_chunks
-
-        try:
-            n = embed_stored_chunks()
-            log.info("Background embedding finished: %d chunks", n)
-        except Exception:  # noqa: BLE001 - keyword search still works without vectors
-            log.exception("Background embedding failed; retrieval will use BM25 only")
-
-    thread = threading.Thread(target=run, name="embed-snapshot", daemon=True)
-    thread.start()
-    return thread
+    if not path.is_file():
+        return {}
+    with gzip.open(path, "rt", encoding="utf-8") as fh:
+        block = json.load(fh).get("vectors")
+    if not block or not block.get("ids"):
+        return {}
+    vecs = np.frombuffer(base64.b64decode(block["f16"]), dtype=np.float16).reshape(-1, block["dim"])
+    return dict(zip(block["ids"], vecs.astype(np.float32).tolist()))
 
 
 def data_status(ticker: str, db_path: Optional[str] = None) -> dict:
