@@ -48,3 +48,16 @@ def test_ingest_price_history_writes_to_db(monkeypatch, tmp_path):
 
     rows = fetch_price_history("AAPL", db_path=db_path)
     assert len(rows) == 2
+
+
+def test_sync_benchmarks_refreshes_only_stale_ones(tmp_path, monkeypatch):
+    from marketpulse import db, pipeline
+
+    path = str(tmp_path / "b.db")
+    for t, last in (("SPY", "2026-03-30"), ("QQQ", "2026-02-01")):
+        db.upsert_price_history([{"ticker": t, "trade_date": last, "open": 1, "high": 1, "low": 1, "close": 1,
+                                  "volume": 1}], db_path=path)
+    called = []
+    monkeypatch.setattr(pipeline, "refresh_prices", lambda t, db_path=None: called.append(t) or {"prices": 3})
+    updated = pipeline.sync_benchmarks("2026-03-30", benchmarks=["SPY", "QQQ", "IWM"], db_path=path)
+    assert called == updated == ["QQQ", "IWM"]  # SPY is current; IWM has no rows at all

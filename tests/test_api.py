@@ -110,3 +110,31 @@ def test_rate_limit_per_client(client, monkeypatch):
     main.app.state.llm_client = FakeClient({"headline": "1"}, {"headline": "2"}, {"headline": "3"})
     codes = [client.post("/api/brief", json={"ticker": "AAPL"}).status_code for _ in range(3)]
     assert codes == [200, 200, 429]
+
+
+def test_tickers_lists_benchmarks_separately(client):
+    body = client.get("/api/tickers").json()
+    symbols = [b["symbol"] for b in body["benchmarks"]]
+    assert "SPY" in symbols and body["default_benchmark"] == "SPY"
+    assert not set(symbols) & set(body["all"])  # benchmarks are references, not company dashboards
+
+
+def test_analytics_endpoint(client):
+    r = client.get("/api/analytics", params={"tickers": "AAPL,MSFT", "benchmark": "spy", "range": "1Y",
+                                             "weights": "1,1", "rf": 4})
+    assert r.status_code == 200
+    body = r.json()
+    assert body["benchmark"]["symbol"] == "SPY" and body["rf_pct"] == 4
+    assert body["portfolio"]["weights"] == {"AAPL": 50.0, "MSFT": 50.0}
+    assert client.get("/api/analytics", params={"tickers": "AAPL,MSFT", "weights": "1"}).status_code == 400
+    assert client.get("/api/analytics", params={"tickers": "AAPL", "range": "2Y"}).status_code == 422
+
+
+def test_refresh_benchmark_is_prices_only(client, monkeypatch):
+    import marketpulse.pipeline as pipeline
+
+    called = []
+    monkeypatch.setattr(pipeline, "refresh_prices", lambda t: called.append(t) or {"ticker": t, "prices": 5})
+    monkeypatch.setattr(pipeline, "refresh_ticker", lambda t: pytest.fail("benchmarks have no filings to fetch"))
+    main._last_refresh.pop("QQQ", None)
+    assert client.post("/api/tickers/QQQ/refresh").json()["prices"] == 5 and called == ["QQQ"]

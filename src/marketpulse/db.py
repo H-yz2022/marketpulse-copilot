@@ -58,6 +58,15 @@ CREATE TABLE IF NOT EXISTS chunks (
 );
 CREATE INDEX IF NOT EXISTS idx_chunks_ticker ON chunks (ticker);
 
+-- Latest company fundamentals, ownership, short interest, analyst targets and
+-- insider-trade summary per ticker, as one JSON document (fields vary by
+-- security type: ETFs carry fund fields instead of company ones).
+CREATE TABLE IF NOT EXISTS fundamentals (
+    ticker TEXT PRIMARY KEY,
+    as_of TEXT NOT NULL,
+    data_json TEXT NOT NULL
+);
+
 -- Small key/value store for app state (e.g. where each ticker's data came from).
 CREATE TABLE IF NOT EXISTS app_meta (
     key TEXT PRIMARY KEY,
@@ -83,6 +92,8 @@ CREATE INDEX IF NOT EXISTS idx_filings_ticker ON filings (ticker, filed_date);
 PUBLIC_SCHEMA_DOC = """
 price_history(ticker TEXT, trade_date TEXT 'YYYY-MM-DD', open REAL, high REAL, low REAL, close REAL, volume INTEGER)
   -- one row per ticker per trading day; primary key (ticker, trade_date)
+  -- also holds market benchmarks (index ETFs, prices only): SPY = S&P 500, QQQ = Nasdaq-100,
+  -- DIA = Dow Jones 30, IWM = Russell 2000, XLK = tech sector, XLF = financials sector
 filings(filing_id TEXT, ticker TEXT, form_type TEXT e.g. '10-K', filed_date TEXT 'YYYY-MM-DD', title TEXT, url TEXT,
         excerpt TEXT -- risk-factor section text)
 sentiment_scores(id INTEGER, ticker TEXT, source_type TEXT e.g. 'filing', source_id TEXT -- filings.filing_id,
@@ -232,6 +243,36 @@ def delete_sentiment_scores_for_ticker(
         else:
             cur = conn.execute("DELETE FROM sentiment_scores WHERE ticker = ?", (ticker.upper(),))
         return cur.rowcount
+
+
+def upsert_fundamentals(ticker: str, as_of: str, data: dict, db_path: Optional[str] = None) -> None:
+    import json
+
+    init_db(db_path)
+    with connect(db_path) as conn:
+        conn.execute(
+            """
+            INSERT INTO fundamentals (ticker, as_of, data_json) VALUES (?, ?, ?)
+            ON CONFLICT(ticker) DO UPDATE SET as_of=excluded.as_of, data_json=excluded.data_json
+            """,
+            (ticker.upper(), as_of, json.dumps(data)),
+        )
+
+
+def fetch_fundamentals(tickers: Sequence[str], db_path: Optional[str] = None) -> dict[str, dict]:
+    """{ticker: {**data, "as_of": date}} for the tickers that have fundamentals stored."""
+    import json
+
+    if not tickers:
+        return {}
+    init_db(db_path)
+    marks = ",".join("?" * len(tickers))
+    with connect(db_path) as conn:
+        rows = conn.execute(
+            f"SELECT ticker, as_of, data_json FROM fundamentals WHERE ticker IN ({marks})",  # noqa: S608 - placeholders only
+            [t.upper() for t in tickers],
+        ).fetchall()
+    return {r["ticker"]: {**json.loads(r["data_json"]), "as_of": r["as_of"]} for r in rows}
 
 
 def list_tickers(db_path: Optional[str] = None) -> list[str]:

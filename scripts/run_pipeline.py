@@ -17,7 +17,7 @@ from marketpulse.pipeline import refresh_ticker  # noqa: E402
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--ticker", nargs="+", default=["AAPL"], help="One or more ticker symbols")
-    parser.add_argument("--period", default="1y", help="yfinance history period, e.g. 6mo, 1y")
+    parser.add_argument("--period", default="10y", help="yfinance history period, e.g. 1y, 5y, 10y")
     args = parser.parse_args()
     for t in args.ticker:
         result = refresh_ticker(t, period=args.period, progress=lambda m: print(f"  - {m}"))

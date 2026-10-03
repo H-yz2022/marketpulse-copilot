@@ -1,10 +1,11 @@
 import { useEffect, useState, type ReactNode } from "react";
-import { api, type Health, type Usage } from "./api";
+import { api, type Benchmark, type Health, type Usage } from "./api";
 import { registerTickers } from "./format";
 import Agent from "./pages/Agent";
 import Compare from "./pages/Compare";
 import Dashboard from "./pages/Dashboard";
 import Explorer from "./pages/Explorer";
+import Markets from "./pages/Markets";
 import Watchlist from "./pages/Watchlist";
 
 // Hash routing (#/dashboard/AAPL) keeps deployment trivial: the backend serves
@@ -32,6 +33,7 @@ const NAV: { key: string; label: string; icon: string; tag?: string }[] = [
   { key: "explorer", label: "Data Explorer", icon: "M4 6c0-1.7 3.6-3 8-3s8 1.3 8 3-3.6 3-8 3-8-1.3-8-3zm0 0v12c0 1.7 3.6 3 8 3s8-1.3 8-3V6M4 12c0 1.7 3.6 3 8 3s8-1.3 8-3", tag: "AI" },
   { key: "compare", label: "Compare", icon: "M8 3v18M16 3v18M3 8h5M16 16h5" },
   { key: "watchlist", label: "Watchlist", icon: "M4 6h16M4 12h16M4 18h10" },
+  { key: "markets", label: "Markets", icon: "M3 21h18M6 17V9M11 17V5M16 17v-6M21 17V8" },
 ];
 
 function ThemeToggle() {
@@ -68,6 +70,8 @@ export default function App() {
   const [health, setHealth] = useState<Health | null>(null);
   const [usage, setUsage] = useState<Usage | null>(null);
   const [tickers, setTickers] = useState<string[]>([]);
+  const [benchmarks, setBenchmarks] = useState<Benchmark[]>([]);
+  const [defaultBenchmark, setDefaultBenchmark] = useState("SPY");
 
   const refreshMeta = () => {
     api.health().then(setHealth).catch(() => setHealth(null));
@@ -77,6 +81,8 @@ export default function App() {
       .then((t) => {
         registerTickers(t.all);
         setTickers(t.all);
+        setBenchmarks(t.benchmarks ?? []);
+        if (t.default_benchmark) setDefaultBenchmark(t.default_benchmark);
       })
       .catch(() => undefined);
   };
@@ -91,13 +97,24 @@ export default function App() {
       content = <Explorer onUsage={refreshMeta} />;
       break;
     case "compare":
-      content = <Compare tickers={tickers} initialA={rest[0]} initialB={rest[1]} onUsage={refreshMeta} />;
+      content = <Compare tickers={tickers} benchmarks={benchmarks} defaultBenchmark={defaultBenchmark} initial={rest} onUsage={refreshMeta} />;
       break;
     case "watchlist":
-      content = <Watchlist tickers={tickers} />;
+      content = <Watchlist tickers={tickers} benchmarks={benchmarks} defaultBenchmark={defaultBenchmark} />;
+      break;
+    case "markets":
+      content = <Markets tickers={tickers} benchmarks={benchmarks} defaultBenchmark={defaultBenchmark} />;
       break;
     default:
-      content = <Dashboard tickers={tickers} ticker={(rest[0] || tickers[0] || "AAPL").toUpperCase()} onMeta={refreshMeta} />;
+      content = (
+        <Dashboard
+          tickers={tickers}
+          benchmarks={benchmarks}
+          defaultBenchmark={defaultBenchmark}
+          ticker={(rest[0] || tickers[0] || "AAPL").toUpperCase()}
+          onMeta={refreshMeta}
+        />
+      );
   }
 
   return (
@@ -111,7 +128,7 @@ export default function App() {
           </span>
           <span>
             <div className="brand-name">MarketPulse</div>
-            <div className="brand-sub">Copilot · AI research</div>
+            <div className="brand-sub">Copilot · market analytics</div>
           </span>
         </a>
         <nav className="nav" aria-label="Main">

@@ -25,7 +25,7 @@ from pydantic import BaseModel, Field
 
 from marketpulse import __version__, analytics, db
 from marketpulse.api import ratelimit
-from marketpulse.config import BASE_DIR, settings
+from marketpulse.config import BASE_DIR, benchmark_name, settings
 from marketpulse.llm.client import LLMUnavailableError
 from marketpulse.llm.sql_guard import UnsafeSQLError
 
@@ -36,7 +36,7 @@ FRONTEND_DIST = BASE_DIR / "frontend" / "dist"
 
 # --------------------------------------------------------------------------- lifecycle
 def _auto_seed() -> None:
-    from marketpulse.pipeline import refresh_ticker
+    from marketpulse.pipeline import refresh_prices, refresh_ticker
 
     for t in settings.default_tickers:
         try:
@@ -44,6 +44,11 @@ def _auto_seed() -> None:
             refresh_ticker(t)
         except Exception:  # noqa: BLE001 - one bad ticker shouldn't stop the rest
             log.exception("Auto-seed failed for %s", t)
+    for b in settings.benchmarks:
+        try:
+            refresh_prices(b)
+        except Exception:  # noqa: BLE001
+            log.exception("Auto-seed failed for benchmark %s", b)
 
 
 @asynccontextmanager
@@ -56,12 +61,19 @@ async def lifespan(app: FastAPI):
     from marketpulse import seed
 
     db.init_db()
-    if not db.list_tickers():
+    stored = db.list_tickers()
+    if not stored:
         if seed.snapshot_available():
             summary = seed.load_snapshot()
             log.info("Loaded snapshot: %s", summary)
         elif settings.auto_seed:
             threading.Thread(target=_auto_seed, name="auto-seed", daemon=True).start()
+    else:
+        # Existing database: add anything a newer snapshot brings (benchmarks, longer
+        # history, fundamentals) without overwriting live data. No-op once done.
+        added = seed.backfill_from_snapshot()
+        if added["prices"] or added["fundamentals"]:
+            log.info("Backfilled from snapshot: %s", added)
     yield
 
 
@@ -116,6 +128,11 @@ def _client_id(request: Request) -> str:
     if fwd:
         return fwd.split(",")[0].strip()
     return request.client.host if request.client else "unknown"
+
+
+def _companies(symbols: list[str]) -> list[str]:
+    """Drop benchmark ETFs: they're market references, not companies with filings."""
+    return [t for t in symbols if t not in settings.benchmarks]
 
 
 def _ai_enabled() -> bool:
@@ -178,15 +195,24 @@ def health() -> dict:
         "version": __version__,
         "ai_enabled": _ai_enabled(),
         "model": settings.anthropic_model,
-        "tickers": db.list_tickers(),
+        "tickers": _companies(db.list_tickers()),
     }
 
 
 @app.get("/api/tickers")
 def tickers() -> dict:
-    stored = db.list_tickers()
+    all_stored = db.list_tickers()
+    stored = _companies(all_stored)
     configured = list(settings.default_tickers)
-    return {"stored": stored, "configured": configured, "all": sorted(set(stored) | set(configured))}
+    return {
+        "stored": stored,
+        "configured": configured,
+        "all": sorted(set(stored) | set(configured)),
+        "benchmarks": [
+            {"symbol": b, "name": benchmark_name(b), "has_data": b in all_stored} for b in settings.benchmarks
+        ],
+        "default_benchmark": settings.default_benchmark,
+    }
 
 
 @app.get("/api/tickers/{ticker}/overview")
@@ -201,8 +227,9 @@ REFRESH_COOLDOWN_S = 60
 
 @app.post("/api/tickers/{ticker}/refresh")
 def refresh(ticker: str) -> dict:
-    """Re-ingest prices + 10-K filings, re-score sentiment and re-index (10-40s)."""
-    from marketpulse.pipeline import refresh_ticker
+    """Re-ingest prices + 10-K filings, re-score sentiment and re-index (10-40s).
+    Benchmarks get prices only; a company refresh also brings stale benchmarks up to date."""
+    from marketpulse.pipeline import refresh_prices, refresh_ticker, sync_benchmarks
 
     t = _ticker(ticker)
     lock = _refresh_locks.setdefault(t, threading.Lock())
@@ -212,10 +239,14 @@ def refresh(ticker: str) -> dict:
         since = time.monotonic() - _last_refresh.get(t, -1e9)
         if since < REFRESH_COOLDOWN_S:
             raise HTTPException(status_code=429, detail=f"{t} was refreshed {int(since)}s ago - try again shortly")
-        result = refresh_ticker(t)
+        is_benchmark = t in settings.benchmarks
+        result = refresh_prices(t) if is_benchmark else refresh_ticker(t)
         _last_refresh[t] = time.monotonic()
         if result["prices"] == 0:
             raise HTTPException(status_code=404, detail=f"No market data found for {t}. Is the symbol correct?")
+        if not is_benchmark:
+            prices = db.fetch_price_history(t)
+            result["benchmarks_updated"] = sync_benchmarks(until=prices[-1]["trade_date"]) if prices else []
         return result
     finally:
         lock.release()
@@ -227,6 +258,33 @@ def watchlist(tickers: str = Query(..., description="Comma-separated, e.g. AAPL,
     if not ts or len(ts) > 12:
         raise HTTPException(status_code=400, detail="Provide between 1 and 12 tickers")
     return analytics.watchlist(ts)
+
+
+@app.get("/api/analytics")
+def market_analytics(
+    tickers: str = Query(..., description="Comma-separated, e.g. AAPL,MSFT,NVDA"),
+    benchmark: Optional[str] = Query(None, description="Market reference, e.g. SPY (S&P 500)"),
+    range_: Literal["1M", "3M", "6M", "YTD", "1Y", "3Y", "5Y", "MAX", "ALL"] = Query("1Y", alias="range"),
+    weights: Optional[str] = Query(None, description="Comma-separated portfolio weights, same order as tickers"),
+    rf: float = Query(0.0, ge=0.0, le=20.0, description="Annual risk-free rate in percent, for Sharpe/Sortino/alpha"),
+) -> dict:
+    """Benchmark-relative risk/return analytics for 1-12 tickers: beta, alpha, R-squared,
+    tracking error, capture ratios, Sharpe/Sortino, VaR, drawdowns, rolling beta,
+    monthly returns and a weighted buy-and-hold portfolio with risk contributions."""
+    ts = list(dict.fromkeys(_ticker(t) for t in tickers.split(",") if t.strip()))
+    if not ts or len(ts) > 12:
+        raise HTTPException(status_code=400, detail="Provide between 1 and 12 tickers")
+    w = None
+    if weights:
+        try:
+            values = [float(x) for x in weights.split(",")]
+        except ValueError:
+            raise HTTPException(status_code=400, detail="weights must be comma-separated numbers") from None
+        if len(values) != len(ts) or any(v < 0 for v in values):
+            raise HTTPException(status_code=400, detail="Give one non-negative weight per ticker")
+        w = dict(zip(ts, values))
+    bm = _ticker(benchmark) if benchmark else settings.default_benchmark
+    return analytics.market_analytics(ts, benchmark=bm, range_=range_, weights=w, rf_pct=rf)
 
 
 @app.get("/api/usage")

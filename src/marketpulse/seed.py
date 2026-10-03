@@ -1,7 +1,7 @@
 """Built-in snapshot dataset: instant start-up without waiting on SEC/yfinance.
 
 `export_snapshot()` writes the current database (latest few 10-Ks per ticker,
-all price history, sentiment scores) to a small gzipped JSON file that is
+all price history, fundamentals, sentiment scores) to a small gzipped JSON file that is
 committed to the repo (seed/marketpulse_seed.json.gz).
 
 `load_snapshot()` runs on first boot when the database is empty. It restores
@@ -99,6 +99,10 @@ def export_snapshot(
         "price_history": prices,
         "filings": filings,
         "sentiment_scores": sentiment,
+        "fundamentals": [
+            {"ticker": t, "as_of": f.pop("as_of"), "data": f}
+            for t, f in db.fetch_fundamentals(tickers, db_path=db_path).items()
+        ],
     }
     if with_vectors:
         payload["vectors"] = encode_vectors(filings)
@@ -111,6 +115,7 @@ def export_snapshot(
         "prices": len(prices),
         "filings": len(filings),
         "sentiment": len(sentiment),
+        "fundamentals": len(payload["fundamentals"]),
         "vectors": len(payload.get("vectors", {}).get("ids", [])),
         "bytes": path.stat().st_size,
     }
@@ -135,6 +140,8 @@ def load_snapshot(path: Path = SEED_PATH, db_path: Optional[str] = None) -> dict
         db.upsert_filing(f, db_path=db_path)
     for r in payload["sentiment_scores"]:
         db.insert_sentiment_score(r, db_path=db_path)
+    for f in payload.get("fundamentals", []):
+        db.upsert_fundamentals(f["ticker"], f["as_of"], f["data"], db_path=db_path)
 
     n_chunks = 0
     for f in payload["filings"]:
@@ -155,6 +162,38 @@ def load_snapshot(path: Path = SEED_PATH, db_path: Optional[str] = None) -> dict
     for t in payload["tickers"]:
         db.set_meta(f"source:{t}", json.dumps({"source": "snapshot", "as_of": as_of}), db_path=db_path)
     return {"tickers": payload["tickers"], "filings": len(payload["filings"]), "chunks": n_chunks, "as_of": as_of}
+
+
+def backfill_from_snapshot(path: Path = SEED_PATH, db_path: Optional[str] = None) -> dict:
+    """Top up an existing database from a newer snapshot without touching live data:
+    price history older than each ticker's earliest stored day (so new benchmarks and
+    longer history appear) and fundamentals for tickers that have none. Runs once per
+    snapshot version. Returns {"prices": rows added, "fundamentals": tickers added}."""
+    if not path.is_file():
+        return {"prices": 0, "fundamentals": []}
+    with gzip.open(path, "rt", encoding="utf-8") as fh:
+        payload = json.load(fh)
+    as_of = payload.get("exported_at", "")
+    if db.get_meta("snapshot_backfill", db_path=db_path) == as_of:
+        return {"prices": 0, "fundamentals": []}
+
+    earliest: dict[str, str] = {}
+    with db.connect(db_path) as conn:
+        for r in conn.execute("SELECT ticker, MIN(trade_date) AS d FROM price_history GROUP BY ticker"):
+            earliest[r["ticker"]] = r["d"]
+    rows = [r for r in payload["price_history"] if r["trade_date"] < earliest.get(r["ticker"], "9999")]
+    db.upsert_price_history(rows, db_path=db_path)
+    for t in {r["ticker"] for r in rows} - set(earliest):
+        db.set_meta(f"source:{t}", json.dumps({"source": "snapshot", "as_of": as_of}), db_path=db_path)
+
+    have = db.fetch_fundamentals([f["ticker"] for f in payload.get("fundamentals", [])], db_path=db_path)
+    added = []
+    for f in payload.get("fundamentals", []):
+        if f["ticker"] not in have:
+            db.upsert_fundamentals(f["ticker"], f["as_of"], f["data"], db_path=db_path)
+            added.append(f["ticker"])
+    db.set_meta("snapshot_backfill", as_of, db_path=db_path)
+    return {"prices": len(rows), "fundamentals": sorted(added)}
 
 
 def load_vectors(path: Path = SEED_PATH) -> dict:

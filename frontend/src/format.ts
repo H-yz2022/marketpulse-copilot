@@ -10,8 +10,15 @@ export function fmtNum(v: number | null | undefined, digits = 2): string {
   return v.toLocaleString(undefined, { minimumFractionDigits: digits, maximumFractionDigits: digits });
 }
 
+/** Round to `digits` and turn -0 into 0, so tiny negatives don't print as "-0.0". */
+function clean(v: number, digits: number): number {
+  const r = Number(v.toFixed(digits));
+  return r === 0 ? 0 : r;
+}
+
 export function fmtPct(v: number | null | undefined, digits = 1, signed = true): string {
   if (v === null || v === undefined || Number.isNaN(v)) return "—";
+  v = clean(v, digits);
   const s = v.toFixed(digits);
   return `${signed && v > 0 ? "+" : ""}${s}%`;
 }
@@ -48,4 +55,14 @@ export function tickerColor(t: string): string {
 }
 export function registerTickers(ts: string[]) {
   ts.forEach((t) => tickerColor(t));
+}
+
+// Reference series are drawn in neutral ink (dashed for the benchmark) so they
+// read as context next to the coloured holdings.
+export const BENCH_COLOR = "var(--muted)";
+export const PORTFOLIO_COLOR = "var(--ink)";
+
+export function fmtRatio(v: number | null | undefined, digits = 2): string {
+  if (v === null || v === undefined || Number.isNaN(v)) return "—";
+  return clean(v, digits).toFixed(digits);
 }

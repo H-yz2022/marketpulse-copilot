@@ -18,11 +18,12 @@
 
 | Page | What it shows |
 |---|---|
-| **Dashboard** | KPIs (return, volatility, drawdown), price and volume charts, NLP filing sentiment, an **AI research brief** (bull/bear case, key risks with citations), and **Ask the filings** (hybrid RAG) |
+| **Dashboard** | KPIs (return, volatility, drawdown), price and volume charts from 1 month to 10 years, **versus-the-market card** (beta, R², alpha, capture ratios vs an index), **key statistics** (valuation, growth and margins, trading activity, technicals, analyst targets, ownership) and reported insider trades, NLP filing sentiment, an **AI research brief** (bull/bear case, key risks with citations), and **Ask the filings** (hybrid RAG) |
 | **Analyst Agent** | **Multi-agent orchestration** with a live trace: router → planner → parallel specialist agents → synthesizer → verifier |
 | **Data Explorer** | **Natural language → SQL**: Claude writes the query, a 4-layer guard runs it read-only, and the results come back as a chart and table. Failed queries get one self-correction |
-| **Compare** | Rebased performance and metrics side by side, plus an **AI comparison of disclosed risk factors** |
-| **Watchlist** | Portfolio KPIs, rebased performance, a return-correlation heatmap and a sortable holdings table |
+| **Compare** | Up to six companies against an index: rebased performance, risk/return scatter, 20+ metrics (Sharpe, Sortino, VaR/CVaR, beta, alpha, tracking error, up/down capture) with the best per row highlighted, a side-by-side **company detail** table (valuation, profitability, trading and flows, technicals, ownership), buying vs selling pressure, insider trades, yearly returns, relative strength, rolling beta, drawdowns, correlation, plus an **AI comparison of disclosed risk factors** for any two |
+| **Watchlist** | A weighted buy-and-hold portfolio vs a benchmark: editable weights, portfolio Sharpe/beta/drawdown, **risk contribution** per holding, diversification ratio, a tabbed holdings table (risk, valuation, growth, trading & flows, technicals & analysts, ownership & insiders), look-through P/E, yield and sector mix, **buying vs selling pressure** (up/down-day volume, Chaikin Money Flow, liquidity), insider buying vs selling, risk/return scatter, correlation, drawdowns, rolling beta, and **yearly** (10-year, with CAGR) or monthly returns |
+| **Markets** | Index ETFs as the market reference (S&P 500, Nasdaq-100, Dow, Russell 2000, tech and financials sectors): index scorecard with fees and valuation, correlations, yearly returns, and each company's **systematic vs company-specific risk** |
 
 ## Architecture
 
@@ -70,7 +71,7 @@ Four independent layers: (1) static checks (one statement, SELECT/WITH only, no 
 
 ### Built-in snapshot + live refresh
 
-The repo ships a small **snapshot dataset** (`seed/marketpulse_seed.json.gz`, about a year of daily prices plus the latest three 10-K risk-factor sections per ticker). On first start with an empty database the app restores it in seconds, so a fresh clone or deploy is usable immediately. Keyword (BM25) search works at once. The snapshot also ships each chunk's embedding, and Chroma plus the embedding model load only on the first semantic query, so an idle server stays around 50 MB and fits a 512 MB free-tier instance. **Refresh live data** on any ticker replaces its snapshot with real-time prices and filings, and a badge on the dashboard shows which source you're looking at. To regenerate the snapshot: `python scripts/export_seed.py`.
+The repo ships a small **snapshot dataset** (`seed/marketpulse_seed.json.gz`: 10 years of daily prices for the companies and index ETFs, their fundamentals and insider-trade summaries, plus the latest three 10-K risk-factor sections per ticker). On first start with an empty database the app restores it in seconds, so a fresh clone or deploy is usable immediately. Keyword (BM25) search works at once. The snapshot also ships each chunk's embedding, and Chroma plus the embedding model load only on the first semantic query, so an idle server stays around 50 MB and fits a 512 MB free-tier instance. **Refresh live data** on any ticker replaces its snapshot with real-time prices and filings, and a badge on the dashboard shows which source you're looking at. To regenerate the snapshot: `python scripts/export_seed.py`.
 
 ### Cost and abuse controls
 
@@ -83,7 +84,7 @@ Every billed endpoint checks a **per-client and a global daily cap** (persisted 
 | LLMs & Generative AI | Multi-agent orchestration, tool use, structured JSON outputs, grounded briefs |
 | NLP | FinBERT sentiment (lexicon fallback), 10-K section extraction, BM25 tokenization |
 | RAG / retrieval | Chunking, Chroma embeddings, BM25, RRF, query rewrite, retrieval eval harness |
-| SQL, BI & data viz | NL→SQL, analytics (returns, volatility, drawdown, correlation), dashboards, heatmap |
+| SQL, BI & data viz | NL→SQL, portfolio and risk analytics (beta, alpha, R², VaR/CVaR, Sharpe/Sortino, risk contribution, rolling beta), dashboards, heatmaps |
 | Cloud & production | Docker multi-stage build, Render blueprint, CI (lint, 60+ offline tests, frontend build, Docker build), rate limits |
 | Market data / fintech | yfinance, SEC EDGAR full-text search API |
 

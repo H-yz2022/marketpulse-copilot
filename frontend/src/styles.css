@@ -304,7 +304,8 @@ table.table { width: 100%; border-collapse: collapse; font-size: 13px; font-vari
 .legend { display: flex; flex-wrap: wrap; gap: 12px; font-size: 12px; color: var(--ink-2); margin-top: 8px; }
 .legend span { display: inline-flex; align-items: center; gap: 6px; }
 .legend i { width: 14px; height: 3px; border-radius: 2px; display: inline-block; }
-.seg { display: inline-flex; background: var(--surface-2); border: 1px solid var(--border); border-radius: 10px; padding: 2px; }
+.seg { display: inline-flex; max-width: 100%; overflow-x: auto; background: var(--surface-2); border: 1px solid var(--border); border-radius: 10px; padding: 2px; }
+.seg button { white-space: nowrap; flex: none; }
 .seg button {
   border: none; background: transparent; padding: 4px 10px; border-radius: 8px; cursor: pointer;
   font-size: 12px; font-weight: 600; color: var(--muted);
@@ -397,7 +398,29 @@ pre.code .fn { color: #ffd59a; }
 .bullets { margin: 0; padding-left: 18px; }
 .bullets li { margin: 4px 0; }
 
-.heat td.cell { text-align: center; font-weight: 600; min-width: 64px; border: 2px solid var(--surface); border-radius: 6px; }
+.heat td.cell { text-align: center; font-weight: 600; min-width: 54px; border: 2px solid var(--surface); border-radius: 6px; }
+.heat.monthly td.cell { min-width: 52px; padding: 7px 6px; font-size: 12px; }
+.heat.monthly th { position: static; }
+/* ---------------------------------------------------------------- analytics */
+.controls { display: flex; align-items: center; gap: 10px 16px; flex-wrap: wrap; margin-top: 12px; padding-top: 12px; border-top: 1px solid var(--border); }
+.controls label { display: inline-flex; align-items: center; gap: 8px; font-size: 12.5px; color: var(--muted); font-weight: 500; }
+.controls .select, .controls .input { height: 32px; }
+.metric-group td { background: var(--surface-2); font-size: 11.5px; font-weight: 600; letter-spacing: .04em; text-transform: uppercase; color: var(--muted); }
+.table .best { color: var(--pos); font-weight: 700; }
+.table td.ref, .table th.ref { color: var(--muted); }
+.help { border-bottom: 1px dotted var(--muted); cursor: help; }
+.weight-input { width: 64px; height: 28px; padding: 0 6px; text-align: right; border-radius: 8px; }
+.minibar { display: inline-block; vertical-align: middle; height: 6px; border-radius: 999px; background: var(--s3); margin-right: 6px; }
+.splitbar { display: flex; height: 10px; border-radius: 999px; overflow: hidden; min-width: 120px; background: var(--surface-3); }
+.splitbar .sys { background: var(--s3); }
+.splitbar .idio { background: var(--brand-1); }
+.read { font-size: 13px; color: var(--ink-2); background: var(--surface-2); border: 1px solid var(--border); border-radius: 12px; padding: 10px 12px; }
+.mlist { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 8px 16px; }
+.mlist div { display: flex; justify-content: space-between; gap: 8px; border-bottom: 1px solid var(--border); padding: 4px 0; font-size: 13px; }
+.mlist b { font-variant-numeric: tabular-nums; }
+.stats-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(240px, 1fr)); gap: 18px 28px; }
+.stat-row { display: flex; justify-content: space-between; gap: 10px; padding: 5px 0; border-bottom: 1px solid var(--border); font-size: 13px; }
+.stat-row b { font-variant-numeric: tabular-nums; white-space: nowrap; }
 
 /* ---------------------------------------------------------------- responsive */
 @media (max-width: 1180px) {

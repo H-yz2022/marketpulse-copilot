@@ -37,3 +37,17 @@ def test_snapshot_roundtrip_keeps_latest_main_filings(tmp_path, monkeypatch):
     status = seed.data_status("AAPL", db_path=dst)
     assert status["source"] == "snapshot" and status["as_of"] == json.loads(
         db.get_meta("source:MSFT", db_path=dst))["as_of"]
+
+
+def test_backfill_adds_older_history_and_fundamentals_without_touching_live_rows(tmp_path):
+    from marketpulse.seed import SEED_PATH
+
+    dst = str(tmp_path / "p.db")
+    live = {"ticker": "AAPL", "trade_date": "2026-09-25", "open": 1, "high": 1, "low": 1, "close": 1.0, "volume": 1}
+    db.upsert_price_history([live], db_path=dst)
+    added = seed.backfill_from_snapshot(SEED_PATH, db_path=dst)
+    assert added["prices"] > 1000 and "SPY" in added["fundamentals"]
+    aapl = db.fetch_price_history("AAPL", db_path=dst)
+    assert aapl[-1]["close"] == 1.0 and aapl[0]["trade_date"] < "2020-01-01"  # live row kept, older history added
+    assert seed.data_status("SPY", db_path=dst)["source"] == "snapshot"
+    assert seed.backfill_from_snapshot(SEED_PATH, db_path=dst) == {"prices": 0, "fundamentals": []}  # once per snapshot

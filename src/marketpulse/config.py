@@ -48,6 +48,13 @@ class Settings:
     default_tickers: tuple = field(
         default_factory=lambda: _parse_list(os.getenv("MARKETPULSE_TICKERS", "AAPL,MSFT,JPM,NVDA,GS"), upper=True)
     )
+    # Market benchmarks (index ETFs) used as reference series: prices only, no
+    # filings. ETFs rather than raw index levels because their adjusted closes
+    # include dividends, like the stocks' adjusted closes they're compared with.
+    benchmarks: tuple = field(
+        default_factory=lambda: _parse_list(os.getenv("MARKETPULSE_BENCHMARKS", "SPY,QQQ,DIA,IWM,XLK,XLF"), upper=True)
+    )
+    default_benchmark: str = field(default_factory=lambda: os.getenv("MARKETPULSE_DEFAULT_BENCHMARK", "SPY").upper())
     # --- Cost / abuse guardrails for the billed LLM endpoints -----------------
     # Every endpoint that calls the Anthropic API is checked against both caps
     # *before* the API is called. Per-client is keyed by client IP.
@@ -65,6 +72,22 @@ class Settings:
     # Ingest the default tickers in the background on first boot if the DB is
     # empty, so a fresh cloud deploy isn't a blank page.
     auto_seed: bool = field(default_factory=lambda: os.getenv("MARKETPULSE_AUTO_SEED", "1") == "1")
+
+
+BENCHMARK_NAMES = {
+    "SPY": "S&P 500",
+    "QQQ": "Nasdaq-100",
+    "DIA": "Dow Jones 30",
+    "IWM": "Russell 2000 small caps",
+    "XLK": "Technology sector",
+    "XLF": "Financials sector",
+    "VTI": "Total US stock market",
+    "EFA": "Developed markets ex-US",
+}
+
+
+def benchmark_name(symbol: str) -> str:
+    return BENCHMARK_NAMES.get(symbol.upper(), symbol.upper())
 
 
 settings = Settings()

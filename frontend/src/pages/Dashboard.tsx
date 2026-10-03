@@ -1,19 +1,43 @@
 import { useMemo, useState } from "react";
 import { navigate } from "../router";
-import { api, type AskResult, type BriefResult } from "../api";
+import { api, type Analytics, type AnalyticsRow, type AskResult, type Benchmark, type BriefResult } from "../api";
+import { analyticsSeries, BenchmarkSelect, FieldLabel, fmtMetric, InsidersCard, MetricLabel, useBenchmark, windowLabel } from "../components/Analytics";
 import { BarChart, LineChart } from "../components/Charts";
 import { Markdown } from "../components/Markdown";
 import { Sources, focusSource } from "../components/Sources";
 import { TickerPicker } from "../components/TickerPicker";
 import { Card, ErrorBox, Kpi, Segmented, Skeleton, Spinner, ToneBadge, useAction, useAsync } from "../components/ui";
-import { fmtCompact, fmtDate, fmtNum, fmtPct, tickerColor, toneClass } from "../format";
+import { deltaClass, fmtCompact, fmtDate, fmtNum, fmtPct, tickerColor, toneClass } from "../format";
+import { fieldsIn, marketRead, type FieldGroup, type MetricKey } from "../metrics";
 
-type Range = "1M" | "3M" | "6M" | "1Y";
-const RANGE_DAYS: Record<Range, number> = { "1M": 22, "3M": 66, "6M": 132, "1Y": 260 };
+type Range = "1M" | "3M" | "6M" | "1Y" | "5Y" | "MAX";
+const RANGE_DAYS: Record<Range, number> = { "1M": 22, "3M": 66, "6M": 132, "1Y": 253, "5Y": 1261, MAX: Infinity };
+const MAX_BARS = 260;
 
-export default function Dashboard({ tickers, ticker, onMeta }: { tickers: string[]; ticker: string; onMeta: () => void }) {
+/** Sum volume into equal buckets so multi-year volume charts stay readable (one bar per ~week or month). */
+function bucketVolume(prices: { trade_date: string; volume: number }[]) {
+  const k = Math.max(1, Math.ceil(prices.length / MAX_BARS));
+  const out: { date: string; volume: number }[] = [];
+  for (let i = 0; i < prices.length; i += k) {
+    const chunk = prices.slice(i, i + k);
+    out.push({ date: chunk[chunk.length - 1].trade_date, volume: chunk.reduce((t, p) => t + p.volume, 0) });
+  }
+  return { bars: out, perBar: k };
+}
+
+const MARKET_KEYS: MetricKey[] = ["beta", "correlation", "r_squared_pct", "alpha_pct", "excess_return_pct", "tracking_error_pct", "up_capture_pct", "down_capture_pct"];
+
+export default function Dashboard({ tickers, benchmarks, defaultBenchmark, ticker, onMeta }: {
+  tickers: string[];
+  benchmarks: Benchmark[];
+  defaultBenchmark: string;
+  ticker: string;
+  onMeta: () => void;
+}) {
   const ov = useAsync(() => api.overview(ticker), [ticker]);
   const [range, setRange] = useState<Range>("6M");
+  const [benchmark, setBenchmark] = useBenchmark(defaultBenchmark);
+  const vs = useAsync(() => api.analytics([ticker], { benchmark, range }), [ticker, benchmark, range]);
   const refresh = useAction(api.refresh);
   const brief = useAction(api.brief);
   const ask = useAction(api.ask);
@@ -21,6 +45,7 @@ export default function Dashboard({ tickers, ticker, onMeta }: { tickers: string
 
   const options = useMemo(() => Array.from(new Set([...tickers, ticker])), [tickers, ticker]);
   const prices = useMemo(() => (ov.data?.prices ?? []).slice(-RANGE_DAYS[range]), [ov.data, range]);
+  const volume = useMemo(() => bucketVolume(prices), [prices]);
   const s = ov.data?.summary;
   const sent = ov.data?.sentiment;
   const hasData = !!s?.has_data;
@@ -31,8 +56,10 @@ export default function Dashboard({ tickers, ticker, onMeta }: { tickers: string
     const r = await refresh.run(t);
     if (r) {
       onMeta();
-      if (t === ticker) ov.reload();
-      else navigate(`dashboard/${t}`);
+      if (t === ticker) {
+        ov.reload();
+        vs.reload();
+      } else navigate(`dashboard/${t}`);
     }
   };
 
@@ -94,7 +121,7 @@ export default function Dashboard({ tickers, ticker, onMeta }: { tickers: string
           <div className="kpi-grid">
             <Kpi label="Last close" value={`$${fmtNum(s?.last_close)}`} delta={s?.change_1d_pct} sub="1 day" />
             <Kpi label="1-month return" value={fmtPct(s?.return_1m_pct)} />
-            <Kpi label="Period return" value={fmtPct(s?.return_period_pct)} sub={s?.start_date ? `since ${fmtDate(s.start_date)}` : undefined} />
+            <Kpi label="1-year return" value={fmtPct(s?.return_period_pct)} sub={s?.start_date ? `since ${fmtDate(s.start_date)}` : undefined} />
             <Kpi label="Volatility (ann.)" value={fmtPct(s?.volatility_ann_pct, 1, false)} />
             <Kpi label="Max drawdown" value={fmtPct(s?.max_drawdown_pct)} />
             <Kpi
@@ -112,7 +139,7 @@ export default function Dashboard({ tickers, ticker, onMeta }: { tickers: string
                 <Segmented
                   value={range}
                   onChange={setRange}
-                  options={(["1M", "3M", "6M", "1Y"] as Range[]).map((r) => ({ value: r, label: r }))}
+                  options={(["1M", "3M", "6M", "1Y", "5Y", "MAX"] as Range[]).map((r) => ({ value: r, label: r }))}
                 />
               }
             >
@@ -126,8 +153,8 @@ export default function Dashboard({ tickers, ticker, onMeta }: { tickers: string
               <BarChart
                 height={90}
                 compactX
-                categories={prices.map((p) => p.trade_date)}
-                series={[{ name: "Volume", color: "var(--brand-1)", values: prices.map((p) => p.volume) }]}
+                categories={volume.bars.map((b) => b.date)}
+                series={[{ name: volume.perBar > 1 ? `Volume (${volume.perBar}-day sums)` : "Volume", color: "var(--brand-1)", values: volume.bars.map((b) => b.volume) }]}
                 yFormat={fmtCompact}
               />
             </Card>
@@ -161,6 +188,10 @@ export default function Dashboard({ tickers, ticker, onMeta }: { tickers: string
               )}
             </Card>
           </div>
+
+          <MarketCard ticker={ticker} benchmarks={benchmarks} benchmark={benchmark} setBenchmark={setBenchmark} vs={vs} range={range} />
+          {vs.data?.tickers[0] && <KeyStats row={vs.data.tickers[0]} range={range} />}
+          {vs.data?.tickers[0]?.fundamentals?.insider && <InsidersCard rows={vs.data.tickers.slice(0, 1)} />}
 
           <Card
             className=""
@@ -287,5 +318,110 @@ function BriefView({ data }: { data: BriefResult }) {
       </div>
       <Sources sources={data.sources} scope="brief" title="Filing excerpts used" />
     </div>
+  );
+}
+
+function MarketCard({ ticker, benchmarks, benchmark, setBenchmark, vs, range }: {
+  ticker: string;
+  benchmarks: Benchmark[];
+  benchmark: string;
+  setBenchmark: (b: string) => void;
+  vs: ReturnType<typeof useAsync<Analytics>>;
+  range: Range;
+}) {
+  const a = vs.data;
+  const row = a?.tickers[0];
+  const m = row?.metrics;
+  const bm = a?.benchmark.symbol ?? benchmark;
+  const read = marketRead(ticker, bm, m);
+  return (
+    <Card
+      title={`${ticker} versus the market`}
+      subtitle={`${range} window, matching the price chart${a ? ` · ${windowLabel(a)}` : ""}`}
+      actions={
+        <div className="controls" style={{ margin: 0, padding: 0, border: "none" }}>
+          <BenchmarkSelect benchmarks={benchmarks} value={benchmark} onChange={setBenchmark} />
+        </div>
+      }
+    >
+      <ErrorBox message={vs.error} />
+      {vs.loading && !a ? (
+        <Skeleton height={220} />
+      ) : a && !a.benchmark.has_data ? (
+        <div className="empty">No price data for {bm} yet.</div>
+      ) : (
+        a && (
+          <div className="grid grid-main">
+            <div>
+              <LineChart
+                height={240}
+                baseline={100}
+                yFormat={(v) => v.toFixed(0)}
+                series={analyticsSeries(a, "performance", { colorOf: () => "var(--s1)" })}
+              />
+            </div>
+            <div className="stack">
+              <div className="row" style={{ gap: 16 }}>
+                <div>
+                  <div className="small muted">{ticker}</div>
+                  <div className={`kpi-value ${deltaClass(m?.return_pct)}`}>{fmtPct(m?.return_pct)}</div>
+                </div>
+                <div>
+                  <div className="small muted">{bm}</div>
+                  <div className={`kpi-value ${deltaClass(a.benchmark_metrics?.return_pct)}`}>{fmtPct(a.benchmark_metrics?.return_pct)}</div>
+                </div>
+              </div>
+              <div className="mlist">
+                {MARKET_KEYS.map((k) => (
+                  <div key={k}>
+                    <span className="muted">
+                      <MetricLabel k={k} />
+                    </span>
+                    <b>{fmtMetric(k, m?.[k])}</b>
+                  </div>
+                ))}
+              </div>
+              {read && <div className="read">{read}</div>}
+            </div>
+          </div>
+        )
+      )}
+    </Card>
+  );
+}
+
+const STAT_GROUPS: FieldGroup[] = ["Valuation", "Growth & profitability", "Trading & flows", "Technicals", "Analysts", "Ownership & insiders"];
+
+function KeyStats({ row, range }: { row: AnalyticsRow; range: Range }) {
+  const f = row.fundamentals;
+  const isFund = f?.quote_type === "ETF";
+  const groups: FieldGroup[] = isFund ? ["Fund", "Valuation", "Trading & flows", "Technicals"] : STAT_GROUPS;
+  const about = [f?.sector, f?.industry, f?.country, f?.employees ? `${fmtCompact(f.employees)} employees` : null, f?.category, f?.fund_family]
+    .filter(Boolean)
+    .join(" · ");
+  return (
+    <Card
+      title={`Key statistics${f?.name ? ` · ${f.name}` : ""}`}
+      subtitle={`${about ? `${about} · ` : ""}Fundamentals from Yahoo Finance${f?.as_of ? ` as of ${fmtDate(f.as_of, true)}` : ""} · trading activity over the ${range} window · hover a label for its definition`}
+    >
+      {!f && <div className="alert info">No fundamentals stored for {row.ticker} yet - "Refresh live data" fetches them.</div>}
+      <div className="stats-grid">
+        {groups.map((g) => (
+          <div key={g}>
+            <h3 style={{ marginBottom: 6 }}>{g}</h3>
+            <div className="stack" style={{ gap: 0 }}>
+              {fieldsIn(g).map((fd) => (
+                <div key={fd.id} className="stat-row">
+                  <span className="muted">
+                    <FieldLabel f={fd} />
+                  </span>
+                  <b>{fd.fmt(fd.get(row))}</b>
+                </div>
+              ))}
+            </div>
+          </div>
+        ))}
+      </div>
+    </Card>
   );
 }

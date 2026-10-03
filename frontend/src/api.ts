@@ -51,6 +51,7 @@ export interface DataStatus {
 export interface Overview {
   ticker: string;
   data_status?: DataStatus;
+  fundamentals?: Fundamentals | null;
   summary: PriceSummary;
   sentiment: SentimentSummary;
   prices: PriceRow[];
@@ -106,6 +107,215 @@ export interface Watchlist {
     best: string | null;
     worst: string | null;
   };
+}
+
+export interface Benchmark {
+  symbol: string;
+  name: string;
+  has_data: boolean;
+}
+
+export type Range = "1M" | "3M" | "6M" | "YTD" | "1Y" | "3Y" | "5Y" | "MAX";
+
+export interface InsiderTrade {
+  date: string;
+  insider: string;
+  position: string;
+  type: "buy" | "sell" | "other";
+  text: string;
+  shares: number;
+  value: number;
+}
+
+/** Percentages in percent, money in the quote currency; null when Yahoo has no value. */
+export interface Fundamentals {
+  as_of: string;
+  name?: string | null;
+  quote_type?: string | null;
+  sector?: string | null;
+  industry?: string | null;
+  country?: string | null;
+  currency?: string | null;
+  recommendation?: string | null;
+  category?: string | null;
+  fund_family?: string | null;
+  market_cap?: number | null;
+  enterprise_to_ebitda?: number | null;
+  pe_trailing?: number | null;
+  pe_forward?: number | null;
+  peg?: number | null;
+  price_to_book?: number | null;
+  price_to_sales?: number | null;
+  eps_trailing?: number | null;
+  eps_forward?: number | null;
+  dividend_yield_pct?: number | null;
+  payout_ratio_pct?: number | null;
+  revenue?: number | null;
+  revenue_growth_pct?: number | null;
+  earnings_growth_pct?: number | null;
+  gross_margin_pct?: number | null;
+  operating_margin_pct?: number | null;
+  profit_margin_pct?: number | null;
+  roe_pct?: number | null;
+  roa_pct?: number | null;
+  debt_to_equity?: number | null;
+  current_ratio?: number | null;
+  free_cash_flow?: number | null;
+  shares_outstanding?: number | null;
+  float_shares?: number | null;
+  shares_short?: number | null;
+  shares_short_prior_month?: number | null;
+  short_pct_float?: number | null;
+  short_ratio_days?: number | null;
+  insider_pct?: number | null;
+  institution_pct?: number | null;
+  target_mean?: number | null;
+  target_high?: number | null;
+  target_low?: number | null;
+  recommendation_mean?: number | null;
+  analyst_count?: number | null;
+  beta_5y?: number | null;
+  avg_volume_3m?: number | null;
+  employees?: number | null;
+  total_assets?: number | null;
+  expense_ratio_pct?: number | null;
+  insider?: {
+    window_days: number;
+    buy_value: number;
+    sell_value: number;
+    buy_count: number;
+    sell_count: number;
+    net_value: number;
+    recent: InsiderTrade[];
+  } | null;
+}
+
+export interface Activity {
+  avg_volume?: number | null;
+  avg_dollar_volume?: number | null;
+  last_volume?: number | null;
+  rel_volume?: number | null;
+  volume_trend_pct?: number | null;
+  up_volume_pct?: number | null;
+  cmf_20?: number | null;
+  cmf_window?: number | null;
+  turnover_pct?: number | null;
+}
+
+export interface Technicals {
+  sma50_gap_pct?: number | null;
+  sma200_gap_pct?: number | null;
+  rsi14?: number | null;
+  high_52w?: number | null;
+  low_52w?: number | null;
+  from_high_pct?: number | null;
+  range_52w_pos_pct?: number | null;
+}
+
+/** Percentages are in percent; ratios are plain numbers. Market-relative fields need a benchmark. */
+export interface Metrics {
+  return_pct?: number | null;
+  ann_return_pct?: number | null;
+  ann_vol_pct?: number | null;
+  downside_dev_pct?: number | null;
+  sharpe?: number | null;
+  sortino?: number | null;
+  max_drawdown_pct?: number | null;
+  calmar?: number | null;
+  var95_pct?: number | null;
+  cvar95_pct?: number | null;
+  best_day_pct?: number | null;
+  worst_day_pct?: number | null;
+  pct_up_days?: number | null;
+  beta?: number | null;
+  alpha_pct?: number | null;
+  correlation?: number | null;
+  r_squared_pct?: number | null;
+  idio_vol_pct?: number | null;
+  tracking_error_pct?: number | null;
+  info_ratio?: number | null;
+  up_capture_pct?: number | null;
+  down_capture_pct?: number | null;
+  excess_return_pct?: number | null;
+}
+
+export interface AnalyticsRow {
+  ticker: string;
+  has_data: boolean;
+  is_benchmark: boolean;
+  last_close?: number;
+  change_1d_pct?: number | null;
+  metrics?: Metrics;
+  activity?: Activity;
+  technicals?: Technicals;
+  fundamentals?: Fundamentals | null;
+  sentiment: SentimentSummary;
+}
+
+export interface Analytics {
+  benchmark: Benchmark;
+  range: Range;
+  rf_pct: number;
+  start_date: string | null;
+  end_date: string | null;
+  n_days: number;
+  missing: string[];
+  tickers: AnalyticsRow[];
+  benchmark_metrics: Metrics | null;
+  benchmark_fundamentals?: Fundamentals | null;
+  benchmark_activity?: Activity | null;
+  benchmark_technicals?: Technicals | null;
+  benchmark_last_close?: number | null;
+  series: {
+    performance: Record<string, SeriesPoint[]>;
+    drawdown: Record<string, SeriesPoint[]>;
+    relative: Record<string, SeriesPoint[]>;
+    rolling_beta: Record<string, SeriesPoint[]>;
+    rolling_window: number;
+    money_flow: Record<string, SeriesPoint[]>;
+  };
+  correlation: { tickers: string[]; matrix: (number | null)[][] };
+  monthly: { months: string[]; rows: Record<string, (number | null)[]> };
+  yearly: {
+    years: string[];
+    rows: Record<string, (number | null)[]>;
+    cagr_pct: Record<string, number | null>;
+    first_date: Record<string, string>;
+  };
+  portfolio: {
+    weights: Record<string, number>;
+    series?: SeriesPoint[];
+    drawdown?: SeriesPoint[];
+    metrics?: Metrics;
+    risk_contribution_pct?: Record<string, number>;
+    diversification_ratio?: number | null;
+    fundamentals?: {
+      pe_trailing: number | null;
+      pe_forward: number | null;
+      dividend_yield_pct: number | null;
+      analyst_upside_pct: number | null;
+      beta_5y: number | null;
+      sectors: Record<string, number>;
+    };
+    best?: string | null;
+    worst?: string | null;
+    avg_net_sentiment?: number | null;
+  };
+}
+
+export interface AnalyticsOptions {
+  benchmark?: string;
+  range?: Range;
+  weights?: number[];
+  rf?: number;
+}
+
+export interface TickerList {
+  stored: string[];
+  configured: string[];
+  all: string[];
+  benchmarks: Benchmark[];
+  default_benchmark: string;
 }
 
 export interface ChartSpec {
@@ -201,14 +411,22 @@ const post = <T>(path: string, body: unknown) => request<T>(path, { method: "POS
 export const api = {
   health: () => request<Health>("/api/health"),
   usage: () => request<Usage>("/api/usage"),
-  tickers: () => request<{ stored: string[]; configured: string[]; all: string[] }>("/api/tickers"),
+  tickers: () => request<TickerList>("/api/tickers"),
   overview: (t: string) => request<Overview>(`/api/tickers/${encodeURIComponent(t)}/overview`),
   refresh: (t: string) =>
-    post<{ ticker: string; prices: number; filings: number; indexed: number; chunks: number }>(
+    post<{ ticker: string; prices: number; filings: number; indexed: number; chunks: number; benchmarks_updated?: string[] }>(
       `/api/tickers/${encodeURIComponent(t)}/refresh`,
       {},
     ),
   watchlist: (ts: string[]) => request<Watchlist>(`/api/watchlist?tickers=${encodeURIComponent(ts.join(","))}`),
+  analytics: (ts: string[], o: AnalyticsOptions = {}) => {
+    const q = new URLSearchParams({ tickers: ts.join(",") });
+    if (o.benchmark) q.set("benchmark", o.benchmark);
+    if (o.range) q.set("range", o.range);
+    if (o.weights) q.set("weights", o.weights.join(","));
+    if (o.rf) q.set("rf", String(o.rf));
+    return request<Analytics>(`/api/analytics?${q}`);
+  },
   ask: (question: string, ticker?: string) => post<AskResult>("/api/ask", { question, ticker }),
   sql: (question: string) => post<SqlResult>("/api/sql", { question }),
   brief: (ticker: string) => post<BriefResult>("/api/brief", { ticker }),
