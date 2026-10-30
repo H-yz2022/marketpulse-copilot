@@ -80,7 +80,7 @@ async def lifespan(app: FastAPI):
 app = FastAPI(
     title="MarketPulse Copilot API",
     version=__version__,
-    description="Agentic LLM research workspace over market data and SEC filings.",
+    description="Market analytics over prices, fundamentals and SEC filings, with optional LLM research tools.",
     lifespan=lifespan,
 )
 app.add_middleware(
@@ -136,11 +136,13 @@ def _companies(symbols: list[str]) -> list[str]:
 
 
 def _ai_enabled() -> bool:
-    return app.state.llm_client is not None or bool(settings.anthropic_api_key)
+    return settings.ai_enabled and (app.state.llm_client is not None or bool(settings.anthropic_api_key))
 
 
 def _llm_guard(request: Request, feature: str) -> None:
     """Fail fast if AI is off, then enforce the daily caps before any billed call."""
+    if not settings.ai_enabled:
+        raise LLMUnavailableError("AI features are turned off on this site.")
     if not _ai_enabled():
         raise LLMUnavailableError(
             "AI features are disabled because ANTHROPIC_API_KEY is not set on the server."

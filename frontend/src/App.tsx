@@ -27,10 +27,10 @@ const Icon = ({ d }: { d: string }) => (
   </svg>
 );
 
-const NAV: { key: string; label: string; icon: string; tag?: string }[] = [
+const NAV: { key: string; label: string; icon: string; tag?: string; ai?: boolean }[] = [
   { key: "dashboard", label: "Dashboard", icon: "M3 3v18h18M7 15l4-4 3 3 6-6" },
-  { key: "agent", label: "Analyst Agent", icon: "M12 3l2.5 5 5.5.8-4 3.9.9 5.5-4.9-2.6-4.9 2.6.9-5.5-4-3.9 5.5-.8z", tag: "AI" },
-  { key: "explorer", label: "Data Explorer", icon: "M4 6c0-1.7 3.6-3 8-3s8 1.3 8 3-3.6 3-8 3-8-1.3-8-3zm0 0v12c0 1.7 3.6 3 8 3s8-1.3 8-3V6M4 12c0 1.7 3.6 3 8 3s8-1.3 8-3", tag: "AI" },
+  { key: "agent", label: "Analyst Agent", icon: "M12 3l2.5 5 5.5.8-4 3.9.9 5.5-4.9-2.6-4.9 2.6.9-5.5-4-3.9 5.5-.8z", tag: "AI", ai: true },
+  { key: "explorer", label: "Data Explorer", icon: "M4 6c0-1.7 3.6-3 8-3s8 1.3 8 3-3.6 3-8 3-8-1.3-8-3zm0 0v12c0 1.7 3.6 3 8 3s8-1.3 8-3V6M4 12c0 1.7 3.6 3 8 3s8-1.3 8-3", tag: "AI", ai: true },
   { key: "compare", label: "Compare", icon: "M8 3v18M16 3v18M3 8h5M16 16h5" },
   { key: "watchlist", label: "Watchlist", icon: "M4 6h16M4 12h16M4 18h10" },
   { key: "markets", label: "Markets", icon: "M3 21h18M6 17V9M11 17V5M16 17v-6M21 17V8" },
@@ -88,8 +88,12 @@ export default function App() {
   };
   useEffect(refreshMeta, []);
 
+  // The server decides: AI pages and buttons only exist once it reports AI is on.
+  const aiEnabled = !!health?.ai_enabled;
+  const nav = NAV.filter((n) => aiEnabled || !n.ai);
+
   let content: ReactNode;
-  switch (page) {
+  switch (aiEnabled || !NAV.some((n) => n.ai && n.key === page) ? page : "dashboard") {
     case "agent":
       content = <Agent tickers={tickers} onUsage={refreshMeta} />;
       break;
@@ -97,7 +101,7 @@ export default function App() {
       content = <Explorer onUsage={refreshMeta} />;
       break;
     case "compare":
-      content = <Compare tickers={tickers} benchmarks={benchmarks} defaultBenchmark={defaultBenchmark} initial={rest} onUsage={refreshMeta} />;
+      content = <Compare tickers={tickers} benchmarks={benchmarks} defaultBenchmark={defaultBenchmark} initial={rest} aiEnabled={aiEnabled} onUsage={refreshMeta} />;
       break;
     case "watchlist":
       content = <Watchlist tickers={tickers} benchmarks={benchmarks} defaultBenchmark={defaultBenchmark} />;
@@ -111,6 +115,7 @@ export default function App() {
           tickers={tickers}
           benchmarks={benchmarks}
           defaultBenchmark={defaultBenchmark}
+          aiEnabled={aiEnabled}
           ticker={(rest[0] || tickers[0] || "AAPL").toUpperCase()}
           onMeta={refreshMeta}
         />
@@ -132,8 +137,8 @@ export default function App() {
           </span>
         </a>
         <nav className="nav" aria-label="Main">
-          {NAV.map((n) => (
-            <a key={n.key} href={`#/${n.key}`} className={page === n.key || (n.key === "dashboard" && !NAV.some((x) => x.key === page)) ? "active" : ""}>
+          {nav.map((n) => (
+            <a key={n.key} href={`#/${n.key}`} className={page === n.key || (n.key === "dashboard" && !nav.some((x) => x.key === page)) ? "active" : ""}>
               <Icon d={n.icon} />
               <span className="nav-label">{n.label}</span>
               {n.tag && <span className="nav-tag">{n.tag}</span>}
@@ -142,10 +147,10 @@ export default function App() {
         </nav>
         <div className="sidebar-foot">
           <div className="status-pill" title={health ? `API v${health.version}` : "API unreachable"}>
-            <span className={`dot ${health?.ai_enabled ? "on" : "off"}`} />
+            <span className={`dot ${health ? "on" : "off"}`} />
             <span>
-              {health ? (health.ai_enabled ? <>AI on · <code>{health.model}</code></> : "AI off · no API key") : "Connecting…"}
-              {usage && usage.ai_enabled && (
+              {health ? (aiEnabled ? <>AI on · <code>{health.model}</code></> : "Online") : "Connecting…"}
+              {usage && aiEnabled && (
                 <div className="muted">
                   {usage.client_used}/{usage.client_limit} AI requests today
                 </div>

@@ -27,10 +27,11 @@ function bucketVolume(prices: { trade_date: string; volume: number }[]) {
 
 const MARKET_KEYS: MetricKey[] = ["beta", "correlation", "r_squared_pct", "alpha_pct", "excess_return_pct", "tracking_error_pct", "up_capture_pct", "down_capture_pct"];
 
-export default function Dashboard({ tickers, benchmarks, defaultBenchmark, ticker, onMeta }: {
+export default function Dashboard({ tickers, benchmarks, defaultBenchmark, aiEnabled, ticker, onMeta }: {
   tickers: string[];
   benchmarks: Benchmark[];
   defaultBenchmark: string;
+  aiEnabled: boolean;
   ticker: string;
   onMeta: () => void;
 }) {
@@ -69,7 +70,7 @@ export default function Dashboard({ tickers, benchmarks, defaultBenchmark, ticke
         <div>
           <div className="eyebrow">Company dashboard</div>
           <h1>{ticker}</h1>
-          <p>Prices, NLP sentiment on 10-K risk factors, and AI research tools for one company.</p>
+          <p>Prices, market comparison, key statistics and sentiment on 10-K risk factors{aiEnabled ? ", plus AI research tools," : ""} for one company.</p>
         </div>
         <div className="stack" style={{ alignItems: "flex-end", gap: 6 }}>
           <button className="btn" onClick={() => doRefresh()} disabled={refresh.busy}>
@@ -193,7 +194,7 @@ export default function Dashboard({ tickers, benchmarks, defaultBenchmark, ticke
           {vs.data?.tickers[0] && <KeyStats row={vs.data.tickers[0]} range={range} />}
           {vs.data?.tickers[0]?.fundamentals?.insider && <InsidersCard rows={vs.data.tickers.slice(0, 1)} />}
 
-          <Card
+          {aiEnabled && <Card
             className=""
             title={<>✦ AI research brief</>}
             subtitle="Claude writes a grounded one-pager from the KPIs above and retrieved 10-K excerpts, with citations."
@@ -207,10 +208,10 @@ export default function Dashboard({ tickers, benchmarks, defaultBenchmark, ticke
             {brief.busy && !briefData && <div className="stack"><Skeleton height={22} width="60%" /><Skeleton height={60} /><Skeleton height={90} /></div>}
             {briefData && <BriefView data={briefData} />}
             {!briefData && !brief.busy && !brief.error && <div className="muted small">Takes ~10 seconds. Uses 1 AI request.</div>}
-          </Card>
+          </Card>}
 
-          <div className="grid grid-2">
-            <Card title="Ask the filings" subtitle="Hybrid RAG: query rewrite → BM25 + vectors → rank fusion → cited answer">
+          <div className={aiEnabled ? "grid grid-2" : "grid"}>
+            {aiEnabled && <Card title="Ask the filings" subtitle="Hybrid RAG: query rewrite → BM25 + vectors → rank fusion → cited answer">
               <form
                 className="row"
                 onSubmit={(e) => {
@@ -234,7 +235,7 @@ export default function Dashboard({ tickers, benchmarks, defaultBenchmark, ticke
                   <Sources sources={askData.sources} scope="ask" />
                 </div>
               )}
-            </Card>
+            </Card>}
 
             <Card title="Recent filings" subtitle="SEC EDGAR 10-K risk-factor sections">
               {ov.data?.filings.length ? (

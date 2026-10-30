@@ -2,6 +2,8 @@
 
 **A multi-agent LLM research workspace for public-market analysis.** Ask a question in plain English and a team of Claude-powered agents plans the work, pulls prices, queries SQL, searches SEC 10-K risk factors with hybrid retrieval, and returns a cited, fact-checked answer. The results appear in a React dashboard.
 
+> **AI features are off by default.** The Analyst Agent, Data Explorer, AI brief, Ask the filings and AI compare only appear when `MARKETPULSE_AI_ENABLED=1` and `ANTHROPIC_API_KEY` are set. Without them the site is a pure market-analytics app, and every AI endpoint returns 503 without calling the API.
+
 > Successor to [MarketPulse AI](https://github.com/H-yz2022/marketpulse-ai) (Streamlit). This version rebuilds the app as a **FastAPI + React** product and adds agentic AI, NL→SQL, hybrid RAG and production guardrails.
 
 ![CI](https://github.com/H-yz2022/marketpulse-copilot/actions/workflows/ci.yml/badge.svg)
@@ -75,7 +77,7 @@ The repo ships a small **snapshot dataset** (`seed/marketpulse_seed.json.gz`: 10
 
 ### Cost and abuse controls
 
-Every billed endpoint checks a **per-client and a global daily cap** (persisted in SQLite) *before* calling the Anthropic API. If AI is disabled (no key), the endpoint returns 503 and no quota is consumed.
+Every billed endpoint checks a **per-client and a global daily cap** (persisted in SQLite) *before* calling the Anthropic API. If AI is disabled (switch off or no key), the endpoint returns 503 and no quota is consumed.
 
 ## Mapping to AI / Data Science internship skills
 
@@ -90,7 +92,7 @@ Every billed endpoint checks a **per-client and a global daily cap** (persisted 
 
 ## Quickstart
 
-**Requirements:** Python 3.10+, Node 20+, and an [Anthropic API key](https://console.anthropic.com/) (optional; without one, everything except the AI features still works).
+**Requirements:** Python 3.10+, Node 20+, and, only for the AI features, `MARKETPULSE_AI_ENABLED=1` plus an [Anthropic API key](https://console.anthropic.com/). Everything else works without them.
 
 ```bash
 git clone https://github.com/H-yz2022/marketpulse-copilot.git
@@ -114,7 +116,7 @@ npm run dev                          # http://localhost:5173
 
 **One container:** `docker build -t marketpulse-copilot . && docker run -p 8000:8000 --env-file .env marketpulse-copilot` serves the API and the built UI at http://localhost:8000.
 
-**Deploy (free):** push to GitHub, then on [Render](https://render.com) choose **New → Blueprint** and pick this repo (`render.yaml`). Set `ANTHROPIC_API_KEY` and `SEC_USER_AGENT` in the dashboard. On first boot the app loads the built-in snapshot, so the site is usable right away.
+**Deploy (free):** push to GitHub, then on [Render](https://render.com) choose **New → Blueprint** and pick this repo (`render.yaml`). Set `SEC_USER_AGENT` in the dashboard (plus `MARKETPULSE_AI_ENABLED=1` and `ANTHROPIC_API_KEY` if you want the AI features). On first boot the app loads the built-in snapshot, so the site is usable right away.
 
 ## Tests
 

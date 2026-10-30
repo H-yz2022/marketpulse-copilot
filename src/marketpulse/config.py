@@ -55,6 +55,9 @@ class Settings:
         default_factory=lambda: _parse_list(os.getenv("MARKETPULSE_BENCHMARKS", "SPY,QQQ,DIA,IWM,XLK,XLF"), upper=True)
     )
     default_benchmark: str = field(default_factory=lambda: os.getenv("MARKETPULSE_DEFAULT_BENCHMARK", "SPY").upper())
+    # Master switch for every LLM feature (agent, NL->SQL, briefs, RAG answers, AI compare).
+    # Off unless explicitly enabled, so no deployment can make billed calls by accident.
+    ai_enabled: bool = field(default_factory=lambda: os.getenv("MARKETPULSE_AI_ENABLED", "0") == "1")
     # --- Cost / abuse guardrails for the billed LLM endpoints -----------------
     # Every endpoint that calls the Anthropic API is checked against both caps
     # *before* the API is called. Per-client is keyed by client IP.

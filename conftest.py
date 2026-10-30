@@ -15,6 +15,7 @@ os.environ["MARKETPULSE_DB_PATH"] = str(Path(_tmp) / "test.db")
 os.environ["CHROMA_PERSIST_DIR"] = str(Path(_tmp) / "chroma")
 os.environ["MARKETPULSE_AUTO_SEED"] = "0"
 os.environ["ANTHROPIC_API_KEY"] = ""
+os.environ["MARKETPULSE_AI_ENABLED"] = "1"  # AI paths run against injected fake clients
 
 sys.path.insert(0, str(Path(__file__).resolve().parent / "src"))
 sys.path.insert(0, str(Path(__file__).resolve().parent))

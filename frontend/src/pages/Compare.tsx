@@ -46,11 +46,12 @@ function RiskList({ items, cite }: { items?: Risk[]; cite: (id: string) => void 
   );
 }
 
-export default function Compare({ tickers, benchmarks, defaultBenchmark, initial, onUsage }: {
+export default function Compare({ tickers, benchmarks, defaultBenchmark, initial, aiEnabled, onUsage }: {
   tickers: string[];
   benchmarks: Benchmark[];
   defaultBenchmark: string;
   initial: string[];
+  aiEnabled: boolean;
   onUsage: () => void;
 }) {
   const fromUrl = initial.map((t) => t.toUpperCase()).filter(Boolean);
@@ -79,7 +80,7 @@ export default function Compare({ tickers, benchmarks, defaultBenchmark, initial
       onUsage();
     }
   });
-  const result = ai.result && pair && ai.result.a === pair[0] && ai.result.b === pair[1] ? ai.result : null;
+  const result = aiEnabled && ai.result && pair && ai.result.a === pair[0] && ai.result.b === pair[1] ? ai.result : null;
   const cite = (id: string) => focusSource("cmp", id);
 
   const pick = (ts: string[]) => {
@@ -96,8 +97,8 @@ export default function Compare({ tickers, benchmarks, defaultBenchmark, initial
           <h1>Compare companies</h1>
           <p>
             Put up to six companies next to a market index: performance, 20+ risk and return metrics, valuation and profitability, trading activity
-            and buying vs selling pressure, insider trades and yearly returns, with the best in each row highlighted. Pick exactly two for an AI
-            comparison of their disclosed 10-K risk factors.
+            and buying vs selling pressure, insider trades and yearly returns, with the best in each row highlighted.
+            {aiEnabled && " Pick exactly two for an AI comparison of their disclosed 10-K risk factors."}
           </p>
         </div>
       </div>
@@ -109,14 +110,16 @@ export default function Compare({ tickers, benchmarks, defaultBenchmark, initial
           <RangeSelect value={range} onChange={setRange} />
           <span className="small muted">{windowLabel(a)}</span>
           <span className="spacer" />
-          <button
-            className="btn btn-primary btn-sm"
-            disabled={ai.busy || !pair}
-            onClick={() => pair && ai.run(pair[0], pair[1])}
-            title={pair ? undefined : "Select exactly two companies to compare their risk factors with AI"}
-          >
-            {ai.busy ? <Spinner /> : "✦"} {pair ? `AI risk-factor comparison: ${pair[0]} vs ${pair[1]}` : "AI comparison needs exactly 2"}
-          </button>
+          {aiEnabled && (
+            <button
+              className="btn btn-primary btn-sm"
+              disabled={ai.busy || !pair}
+              onClick={() => pair && ai.run(pair[0], pair[1])}
+              title={pair ? undefined : "Select exactly two companies to compare their risk factors with AI"}
+            >
+              {ai.busy ? <Spinner /> : "✦"} {pair ? `AI risk-factor comparison: ${pair[0]} vs ${pair[1]}` : "AI comparison needs exactly 2"}
+            </button>
+          )}
         </div>
       </Card>
 

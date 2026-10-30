@@ -138,3 +138,33 @@ def test_refresh_benchmark_is_prices_only(client, monkeypatch):
     monkeypatch.setattr(pipeline, "refresh_ticker", lambda t: pytest.fail("benchmarks have no filings to fetch"))
     main._last_refresh.pop("QQQ", None)
     assert client.post("/api/tickers/QQQ/refresh").json()["prices"] == 5 and called == ["QQQ"]
+
+
+def test_ai_switch_off_blocks_every_ai_endpoint_even_with_a_client(client, monkeypatch):
+    import dataclasses
+
+    calls = FakeClient()  # any model call would fail: it has no scripted responses
+    main.app.state.llm_client = calls
+    assert client.get("/api/health").json()["ai_enabled"] is True
+    monkeypatch.setattr(main, "settings", dataclasses.replace(settings, ai_enabled=False))
+
+    assert client.get("/api/health").json()["ai_enabled"] is False
+    assert client.get("/api/usage").json()["ai_enabled"] is False
+    for path, body in [
+        ("/api/ask", {"question": "What risks?"}),
+        ("/api/sql", {"question": "Top closes?"}),
+        ("/api/brief", {"ticker": "AAPL"}),
+        ("/api/compare", {"a": "AAPL", "b": "MSFT"}),
+        ("/api/agent", {"question": "How is AAPL?"}),
+    ]:
+        r = client.post(path, json=body)
+        assert r.status_code == 503 and "turned off" in r.json()["detail"], path
+    assert calls.calls == []
+    assert client.get("/api/tickers/AAPL/overview").status_code == 200  # analytics are unaffected
+
+
+def test_ai_is_off_by_default(monkeypatch):
+    from marketpulse.config import Settings
+
+    monkeypatch.delenv("MARKETPULSE_AI_ENABLED")
+    assert Settings().ai_enabled is False

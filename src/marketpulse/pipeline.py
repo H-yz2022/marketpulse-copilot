@@ -16,7 +16,9 @@ import logging
 from datetime import datetime, timezone
 from typing import Callable, Optional
 
+from marketpulse.config import settings
 from marketpulse.db import (
+    delete_chunks_for_ticker,
     delete_filings_for_ticker,
     delete_sentiment_scores_for_ticker,
     fetch_filings,
@@ -56,7 +58,11 @@ def refresh_ticker(
     say(f"Clearing existing data for {t}")
     delete_filings_for_ticker(t, db_path=db_path)
     delete_sentiment_scores_for_ticker(t, source_type="filing", db_path=db_path)
-    delete_ticker_documents(t)
+    # Vector search only serves the AI features: with them off, don't load Chroma or the embedding model.
+    if settings.ai_enabled:
+        delete_ticker_documents(t)
+    else:
+        delete_chunks_for_ticker(t, db_path=db_path)
 
     say(f"Fetching {period} of price history for {t}")
     n_prices = ingest_price_history(t, period=period, db_path=db_path)
@@ -84,6 +90,7 @@ def refresh_ticker(
                 "filed_date": filing["filed_date"] or "",
                 "url": filing["url"] or "",
             },
+            dense=settings.ai_enabled,
         )
         n_indexed += 1
     now = datetime.now(timezone.utc).isoformat(timespec="seconds")
@@ -112,8 +119,6 @@ def refresh_prices(ticker: str, period: str = HISTORY_PERIOD, db_path: Optional[
 def sync_benchmarks(until: str, benchmarks: Optional[list[str]] = None, db_path: Optional[str] = None) -> list[str]:
     """Refresh any benchmark whose prices stop before `until` (a trade date), so a
     freshly refreshed company still lines up with its market reference. Best effort."""
-    from marketpulse.config import settings
-
     updated = []
     for b in benchmarks or settings.benchmarks:
         rows = fetch_price_history(b, db_path=db_path)

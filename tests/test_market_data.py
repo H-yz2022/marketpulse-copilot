@@ -2,6 +2,7 @@ import sys
 import types
 
 import pandas as pd
+import pytest
 
 from marketpulse.db import fetch_price_history
 from marketpulse.ingestion import market_data
@@ -61,3 +62,24 @@ def test_sync_benchmarks_refreshes_only_stale_ones(tmp_path, monkeypatch):
     monkeypatch.setattr(pipeline, "refresh_prices", lambda t, db_path=None: called.append(t) or {"prices": 3})
     updated = pipeline.sync_benchmarks("2026-03-30", benchmarks=["SPY", "QQQ", "IWM"], db_path=path)
     assert called == updated == ["QQQ", "IWM"]  # SPY is current; IWM has no rows at all
+
+
+def test_refresh_skips_vector_index_when_ai_is_off(tmp_path, monkeypatch):
+    import dataclasses
+
+    from marketpulse import db, pipeline
+
+    path = str(tmp_path / "r.db")
+    monkeypatch.setattr(pipeline, "settings", dataclasses.replace(pipeline.settings, ai_enabled=False))
+    monkeypatch.setattr(pipeline, "delete_ticker_documents", lambda t: pytest.fail("Chroma must not load"))
+    monkeypatch.setattr(pipeline, "ingest_price_history", lambda t, period, db_path: 1)
+    monkeypatch.setattr(pipeline, "ingest_fundamentals", lambda t, db_path: True)
+    monkeypatch.setattr(pipeline, "ingest_filings_for_ticker", lambda t, db_path: 1)
+    monkeypatch.setattr(pipeline, "score_and_store", lambda *a, **k: None)
+    seen = []
+    monkeypatch.setattr(pipeline, "index_document", lambda *a, **k: seen.append(k["dense"]) or 1)
+    db.upsert_filing({"filing_id": "A-1", "ticker": "AAPL", "form_type": "10-K", "filed_date": "2026-01-01",
+                      "title": "t", "url": "", "excerpt": "risk text"}, db_path=path)
+    monkeypatch.setattr(pipeline, "delete_filings_for_ticker", lambda t, db_path: 0)
+    assert pipeline.refresh_ticker("AAPL", db_path=path)["chunks"] == 1
+    assert seen == [False]
