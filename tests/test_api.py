@@ -168,3 +168,24 @@ def test_ai_is_off_by_default(monkeypatch):
 
     monkeypatch.delenv("MARKETPULSE_AI_ENABLED")
     assert Settings().ai_enabled is False
+
+
+def test_live_refresh_switch(client, monkeypatch):
+    import dataclasses
+
+    assert client.get("/api/health").json()["live_refresh"] is True
+    monkeypatch.setattr(main, "settings", dataclasses.replace(settings, live_refresh=False))
+    assert client.get("/api/health").json()["live_refresh"] is False
+    r = client.post("/api/tickers/AAPL/refresh")
+    assert r.status_code == 403 and "turned off" in r.json()["detail"]
+
+
+def test_data_dir_is_tmp_on_vercel(tmp_path):
+    from pathlib import Path
+
+    from marketpulse.config import data_dir
+
+    assert data_dir({}, base=tmp_path) == tmp_path / "data"
+    on_vercel = data_dir({"VERCEL": "1"}, base=tmp_path)
+    assert on_vercel.name == "marketpulse" and on_vercel.parent == Path(__import__("tempfile").gettempdir())
+    assert data_dir({"VERCEL": "1", "MARKETPULSE_DATA_DIR": "/x/y"}, base=tmp_path) == Path("/x/y")

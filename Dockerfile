@@ -16,8 +16,8 @@ ENV PYTHONDONTWRITEBYTECODE=1 PYTHONUNBUFFERED=1 PIP_NO_CACHE_DIR=1 MALLOC_ARENA
 RUN apt-get update && apt-get install -y --no-install-recommends build-essential \
     && rm -rf /var/lib/apt/lists/*
 
-COPY requirements.txt .
-RUN pip install -r requirements.txt
+COPY requirements.txt requirements-ai.txt ./
+RUN pip install -r requirements.txt -r requirements-ai.txt
 # Bake the embedding model into the image so the first semantic query doesn't download it.
 RUN python -c "from chromadb.utils.embedding_functions import ONNXMiniLM_L6_V2 as E; E()._download_model_if_not_exists()"
 

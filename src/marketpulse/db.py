@@ -126,9 +126,19 @@ def connect(db_path: Optional[str] = None) -> Iterator[sqlite3.Connection]:
         conn.close()
 
 
+_initialized: set[str] = set()
+
+
 def init_db(db_path: Optional[str] = None) -> None:
+    """Create the tables if needed. Every helper calls this, so remember which files
+    already have the schema (re-checking that the file still exists) instead of
+    re-running the script on each call: loading the snapshot makes ~70 of them."""
+    path = str(Path(db_path or settings.db_path).resolve())
+    if path in _initialized and Path(path).exists():
+        return
     with connect(db_path) as conn:
         conn.executescript(SCHEMA)
+    _initialized.add(path)
 
 
 def upsert_price_history(rows: Sequence[dict], db_path: Optional[str] = None) -> int:

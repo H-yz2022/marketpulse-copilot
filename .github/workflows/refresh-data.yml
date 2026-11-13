@@ -1,0 +1,47 @@
+name: Refresh data
+
+# Rebuilds the built-in snapshot from live market data and commits it, which
+# redeploys the site on Vercel. Hosts without a persistent disk can't keep live
+# refreshes, so this is how the public site stays current.
+on:
+  schedule:
+    - cron: "0 7 * * 6" # Saturdays 07:00 UTC, after Friday's close
+  workflow_dispatch: # "Run workflow" button on the Actions tab
+
+permissions:
+  contents: write
+
+concurrency:
+  group: refresh-data
+  cancel-in-progress: false
+
+jobs:
+  refresh:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+          cache: "pip"
+      - name: Install dependencies
+        # chromadb is needed to precompute the snapshot's search vectors.
+        run: pip install -r requirements.txt -r requirements-ai.txt
+      - name: Rebuild snapshot from live data
+        env:
+          # SEC EDGAR asks for a contact in the User-Agent; set the SEC_USER_AGENT
+          # repository secret to "Your Name you@example.com" to use your own.
+          SEC_USER_AGENT: ${{ secrets.SEC_USER_AGENT || 'MarketPulse Copilot research@example.com' }}
+        run: python scripts/refresh_snapshot.py
+      - name: Commit the new snapshot
+        run: |
+          if git diff --quiet -- seed/; then
+            echo "Snapshot unchanged."
+            exit 0
+          fi
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add seed/marketpulse_seed.json.gz
+          git commit -m "Refresh snapshot data ($(date -u +%F))"
+          git push

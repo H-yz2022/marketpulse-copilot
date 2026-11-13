@@ -7,8 +7,10 @@ sensible default so the app runs (in a degraded/offline mode) even with no
 from __future__ import annotations
 
 import os
+import tempfile
 from dataclasses import dataclass, field
 from pathlib import Path
+from typing import Mapping
 
 try:
     from dotenv import load_dotenv
@@ -18,7 +20,25 @@ except ImportError:  # python-dotenv is optional; env vars still work without it
     pass
 
 BASE_DIR = Path(__file__).resolve().parents[2]
-DATA_DIR = BASE_DIR / "data"
+# Vercel sets VERCEL=1 at build and run time.
+ON_VERCEL = bool(os.getenv("VERCEL"))
+
+
+def data_dir(env: Mapping[str, str] = os.environ, base: Path = BASE_DIR) -> Path:
+    """Where the SQLite database and vector index live.
+
+    Vercel's filesystem is read-only apart from /tmp, which is per-instance scratch
+    space: the database is rebuilt there from the built-in snapshot when an
+    instance starts, which takes about a second.
+    """
+    if env.get("MARKETPULSE_DATA_DIR"):
+        return Path(env["MARKETPULSE_DATA_DIR"])
+    if env.get("VERCEL"):
+        return Path(tempfile.gettempdir()) / "marketpulse"
+    return base / "data"
+
+
+DATA_DIR = data_dir()
 DATA_DIR.mkdir(parents=True, exist_ok=True)
 
 
@@ -71,6 +91,11 @@ class Settings:
     # separately hosted frontend). The bundled frontend is same-origin.
     cors_origins: tuple = field(
         default_factory=lambda: _parse_list(os.getenv("MARKETPULSE_CORS_ORIGINS", "http://localhost:5173"))
+    )
+    # "Refresh live data" (fetch prices/filings on demand). Off on Vercel by default: each
+    # instance's database is temporary there, so the weekly snapshot job updates the data instead.
+    live_refresh: bool = field(
+        default_factory=lambda: os.getenv("MARKETPULSE_LIVE_REFRESH", "0" if ON_VERCEL else "1") == "1"
     )
     # Ingest the default tickers in the background on first boot if the DB is
     # empty, so a fresh cloud deploy isn't a blank page.

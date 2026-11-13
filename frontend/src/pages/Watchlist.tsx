@@ -70,7 +70,12 @@ const Swatch = ({ color, line = false }: { color: string; line?: boolean }) => (
   <span style={{ display: "inline-block", width: 10, height: line ? 3 : 10, borderRadius: 3, background: color, marginRight: 8, verticalAlign: "middle" }} />
 );
 
-export default function Watchlist({ tickers, benchmarks, defaultBenchmark }: { tickers: string[]; benchmarks: Benchmark[]; defaultBenchmark: string }) {
+export default function Watchlist({ tickers, benchmarks, defaultBenchmark, liveRefresh }: {
+  tickers: string[];
+  benchmarks: Benchmark[];
+  defaultBenchmark: string;
+  liveRefresh: boolean;
+}) {
   const [selected, setSelected] = useStored<string[]>("mp-watchlist", []);
   const [raw, setRaw] = useStored<Record<string, number>>("mp-weights", {});
   const [benchmark, setBenchmark] = useBenchmark(defaultBenchmark);
@@ -173,7 +178,10 @@ export default function Watchlist({ tickers, benchmarks, defaultBenchmark }: { t
         </div>
       </Card>
       <ErrorBox message={wl.error} />
-      {missing.length > 0 && (
+      {missing.length > 0 && !liveRefresh && (
+        <div className="alert warn">No stored data for {missing.join(", ")} - it isn&apos;t in this site&apos;s dataset.</div>
+      )}
+      {missing.length > 0 && liveRefresh && (
         <div className="alert warn">
           No stored data for {missing.join(", ")} yet - open{" "}
           {missing.map((t, i) => (

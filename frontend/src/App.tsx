@@ -90,6 +90,8 @@ export default function App() {
 
   // The server decides: AI pages and buttons only exist once it reports AI is on.
   const aiEnabled = !!health?.ai_enabled;
+  // Until the server answers, assume refresh is unavailable rather than flash a button that 403s.
+  const liveRefresh = !!health?.live_refresh;
   const nav = NAV.filter((n) => aiEnabled || !n.ai);
 
   let content: ReactNode;
@@ -101,10 +103,10 @@ export default function App() {
       content = <Explorer onUsage={refreshMeta} />;
       break;
     case "compare":
-      content = <Compare tickers={tickers} benchmarks={benchmarks} defaultBenchmark={defaultBenchmark} initial={rest} aiEnabled={aiEnabled} onUsage={refreshMeta} />;
+      content = <Compare tickers={tickers} benchmarks={benchmarks} defaultBenchmark={defaultBenchmark} initial={rest} aiEnabled={aiEnabled} liveRefresh={liveRefresh} onUsage={refreshMeta} />;
       break;
     case "watchlist":
-      content = <Watchlist tickers={tickers} benchmarks={benchmarks} defaultBenchmark={defaultBenchmark} />;
+      content = <Watchlist tickers={tickers} benchmarks={benchmarks} defaultBenchmark={defaultBenchmark} liveRefresh={liveRefresh} />;
       break;
     case "markets":
       content = <Markets tickers={tickers} benchmarks={benchmarks} defaultBenchmark={defaultBenchmark} />;
@@ -116,6 +118,7 @@ export default function App() {
           benchmarks={benchmarks}
           defaultBenchmark={defaultBenchmark}
           aiEnabled={aiEnabled}
+          liveRefresh={liveRefresh}
           ticker={(rest[0] || tickers[0] || "AAPL").toUpperCase()}
           onMeta={refreshMeta}
         />

@@ -46,12 +46,13 @@ function RiskList({ items, cite }: { items?: Risk[]; cite: (id: string) => void 
   );
 }
 
-export default function Compare({ tickers, benchmarks, defaultBenchmark, initial, aiEnabled, onUsage }: {
+export default function Compare({ tickers, benchmarks, defaultBenchmark, initial, aiEnabled, liveRefresh, onUsage }: {
   tickers: string[];
   benchmarks: Benchmark[];
   defaultBenchmark: string;
   initial: string[];
   aiEnabled: boolean;
+  liveRefresh: boolean;
   onUsage: () => void;
 }) {
   const fromUrl = initial.map((t) => t.toUpperCase()).filter(Boolean);
@@ -124,7 +125,7 @@ export default function Compare({ tickers, benchmarks, defaultBenchmark, initial
       </Card>
 
       <ErrorBox message={an.error} />
-      {a && a.missing.length > 0 && <div className="alert warn">No stored data for {a.missing.join(", ")} - refresh it from its dashboard first.</div>}
+      {a && a.missing.length > 0 && <div className="alert warn">No stored data for {a.missing.join(", ")}{liveRefresh ? " - refresh it from its dashboard first." : " - it isn't in this site's dataset."}</div>}
 
       {an.loading && !a ? (
         <Skeleton height={320} />

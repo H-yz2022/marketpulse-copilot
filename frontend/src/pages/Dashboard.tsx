@@ -27,11 +27,12 @@ function bucketVolume(prices: { trade_date: string; volume: number }[]) {
 
 const MARKET_KEYS: MetricKey[] = ["beta", "correlation", "r_squared_pct", "alpha_pct", "excess_return_pct", "tracking_error_pct", "up_capture_pct", "down_capture_pct"];
 
-export default function Dashboard({ tickers, benchmarks, defaultBenchmark, aiEnabled, ticker, onMeta }: {
+export default function Dashboard({ tickers, benchmarks, defaultBenchmark, aiEnabled, liveRefresh, ticker, onMeta }: {
   tickers: string[];
   benchmarks: Benchmark[];
   defaultBenchmark: string;
   aiEnabled: boolean;
+  liveRefresh: boolean;
   ticker: string;
   onMeta: () => void;
 }) {
@@ -73,15 +74,19 @@ export default function Dashboard({ tickers, benchmarks, defaultBenchmark, aiEna
           <p>Prices, market comparison, key statistics and sentiment on 10-K risk factors{aiEnabled ? ", plus AI research tools," : ""} for one company.</p>
         </div>
         <div className="stack" style={{ alignItems: "flex-end", gap: 6 }}>
-          <button className="btn" onClick={() => doRefresh()} disabled={refresh.busy}>
-            {refresh.busy ? <Spinner /> : "↻"} {refresh.busy ? "Fetching SEC + market data (~30s)…" : "Refresh live data"}
-          </button>
+          {liveRefresh && (
+            <button className="btn" onClick={() => doRefresh()} disabled={refresh.busy}>
+              {refresh.busy ? <Spinner /> : "↻"} {refresh.busy ? "Fetching SEC + market data (~30s)…" : "Refresh live data"}
+            </button>
+          )}
           {ov.data?.data_status && ov.data.data_status.source !== "unknown" && (
             <span
               className={`badge ${ov.data.data_status.source === "live" ? "pos" : "outline"}`}
               title={
                 ov.data.data_status.source === "snapshot"
-                  ? "Built-in snapshot that loads instantly. Click Refresh live data for real-time prices and filings."
+                  ? liveRefresh
+                    ? "Built-in snapshot that loads instantly. Click Refresh live data for real-time prices and filings."
+                    : "Prices, fundamentals and filings as of this date; the site's dataset is refreshed weekly."
                   : "Fetched live from Yahoo Finance and SEC EDGAR."
               }
             >
@@ -96,7 +101,7 @@ export default function Dashboard({ tickers, benchmarks, defaultBenchmark, aiEna
         options={options}
         value={ticker}
         onChange={(t) => navigate(`dashboard/${t}`)}
-        onAdd={(t) => (options.includes(t) ? navigate(`dashboard/${t}`) : doRefresh(t))}
+        onAdd={liveRefresh ? (t) => (options.includes(t) ? navigate(`dashboard/${t}`) : doRefresh(t)) : undefined}
         colorOf={tickerColor}
       />
       <ErrorBox message={refresh.error || ov.error} />
@@ -111,10 +116,12 @@ export default function Dashboard({ tickers, benchmarks, defaultBenchmark, aiEna
       ) : !hasData ? (
         <Card>
           <div className="empty">
-            <p>No stored data for <b>{ticker}</b> yet.</p>
-            <button className="btn btn-primary" onClick={() => doRefresh()} disabled={refresh.busy}>
-              {refresh.busy ? <Spinner /> : null} Fetch prices and 10-K filings
-            </button>
+            <p>No stored data for <b>{ticker}</b>{liveRefresh ? " yet." : " - it isn't in this site's dataset."}</p>
+            {liveRefresh && (
+              <button className="btn btn-primary" onClick={() => doRefresh()} disabled={refresh.busy}>
+                {refresh.busy ? <Spinner /> : null} Fetch prices and 10-K filings
+              </button>
+            )}
           </div>
         </Card>
       ) : (

@@ -92,7 +92,7 @@ Every billed endpoint checks a **per-client and a global daily cap** (persisted 
 
 ## Quickstart
 
-**Requirements:** Python 3.10+, Node 20+, and, only for the AI features, `MARKETPULSE_AI_ENABLED=1` plus an [Anthropic API key](https://console.anthropic.com/). Everything else works without them.
+**Requirements:** Python 3.10+ and Node 20+. The AI features also need `pip install -r requirements-ai.txt`, `MARKETPULSE_AI_ENABLED=1` and an [Anthropic API key](https://console.anthropic.com/); everything else works without them.
 
 ```bash
 git clone https://github.com/H-yz2022/marketpulse-copilot.git
@@ -116,7 +116,9 @@ npm run dev                          # http://localhost:5173
 
 **One container:** `docker build -t marketpulse-copilot . && docker run -p 8000:8000 --env-file .env marketpulse-copilot` serves the API and the built UI at http://localhost:8000.
 
-**Deploy (free):** push to GitHub, then on [Render](https://render.com) choose **New → Blueprint** and pick this repo (`render.yaml`). Set `SEC_USER_AGENT` in the dashboard (plus `MARKETPULSE_AI_ENABLED=1` and `ANTHROPIC_API_KEY` if you want the AI features). On first boot the app loads the built-in snapshot, so the site is usable right away.
+**Deploy on Vercel (free, no card):** on [vercel.com](https://vercel.com) choose **Add New → Project**, import this GitHub repo and click **Deploy**; `vercel.json` and the root `app.py` configure everything. The FastAPI app runs as one Vercel Function and the React build is served from Vercel's CDN. Vercel's filesystem is temporary, so each instance rebuilds its SQLite database from the built-in snapshot in about a second, "Refresh live data" is turned off, and the [Refresh data](.github/workflows/refresh-data.yml) GitHub Action rebuilds the snapshot from live sources every Saturday and commits it, which redeploys the site. Run it any time from the Actions tab, and set an `SEC_USER_AGENT` repository secret (`Your Name you@example.com`) so SEC EDGAR knows who is asking.
+
+**Deploy with Docker (Render, Cloud Run, Fly.io, ...):** the `Dockerfile` builds one container with the API and the UI (plus the optional AI dependencies). On [Render](https://render.com) choose **New → Blueprint** and pick this repo (`render.yaml`), then set `SEC_USER_AGENT` (plus `MARKETPULSE_AI_ENABLED=1` and `ANTHROPIC_API_KEY` for the AI features). On first boot the app loads the built-in snapshot, so the site is usable right away, and live refresh works.
 
 ## Tests
 

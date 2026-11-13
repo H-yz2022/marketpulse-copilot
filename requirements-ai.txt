@@ -1,0 +1,5 @@
+# Extra dependency for the optional AI features (vector search over 10-K filings).
+# Only needed when MARKETPULSE_AI_ENABLED=1, and by scripts/refresh_snapshot.py to
+# precompute the snapshot's embeddings. Kept out of requirements.txt so the
+# Vercel function stays small. Install with: pip install -r requirements-ai.txt
+chromadb>=0.5

@@ -75,6 +75,7 @@ export interface Health {
   status: string;
   version: string;
   ai_enabled: boolean;
+  live_refresh?: boolean;
   model: string;
   tickers: string[];
 }

@@ -196,6 +196,7 @@ def health() -> dict:
         "status": "ok",
         "version": __version__,
         "ai_enabled": _ai_enabled(),
+        "live_refresh": settings.live_refresh,
         "model": settings.anthropic_model,
         "tickers": _companies(db.list_tickers()),
     }
@@ -233,6 +234,11 @@ def refresh(ticker: str) -> dict:
     Benchmarks get prices only; a company refresh also brings stale benchmarks up to date."""
     from marketpulse.pipeline import refresh_prices, refresh_ticker, sync_benchmarks
 
+    if not settings.live_refresh:
+        raise HTTPException(
+            status_code=403,
+            detail="Live refresh is turned off on this site; its data is updated by a scheduled job.",
+        )
     t = _ticker(ticker)
     lock = _refresh_locks.setdefault(t, threading.Lock())
     if not lock.acquire(blocking=False):
